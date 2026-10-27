@@ -1,0 +1,6 @@
+{
+  "name": "حور تلعب و تتعلم",
+  "description": "لعبة صيد الدجاج التعليمية للأطفال بدون إنترنت (أوفلاين) لتعليم الجمع والطرح والكلمات الإنجليزية البسيطة عبر ٢٠ مرحلة ممتعة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

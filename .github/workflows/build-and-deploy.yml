@@ -1,0 +1,55 @@
+name: Build Android APK & Deploy Web App
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-web-and-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Android Build Tools (aapt, dx, zipalign, apksigner)
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            aapt zipalign apksigner dalvik-exchange android-sdk-platform-23 default-jdk-headless zip
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: TypeScript Lint Check
+        run: npm run lint
+
+      - name: Build Web App, Offline HTML & Signed Android APK
+        run: |
+          npm run build
+          node scripts/bundle_html.js
+          bash scripts/build_apk.sh
+          cp public/Hoor-Plays-Learns.apk dist/
+          cp public/Hoor-Plays-Learns-Android.html dist/
+          cp public/Hoor-Android-APK-Project.zip dist/
+
+      - name: Upload Signed Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hoor-Plays-Learns-APK
+          path: |
+            public/Hoor-Plays-Learns.apk
+            public/Hoor-Plays-Learns-Android.html
+            public/Hoor-Android-APK-Project.zip
+          if-no-files-found: error
