@@ -250,6 +250,61 @@ class NaturalSoundEngine {
   }
 
   /**
+   * Enthusiastic celebration cheer & applause with Arabic encouraging praise for Hoor
+   */
+  public playCelebrationCheer(customPhrase = 'أحسنتِ يا حور يا بطلة! ما شاء الله عليكِ!') {
+    const ctx = this.getContext();
+    if (ctx) {
+      const now = ctx.currentTime;
+      // Synthesize natural warm applause / cheer burst (layered filtered noise bursts)
+      for (let i = 0; i < 8; i++) {
+        const offset = i * 0.08 + Math.random() * 0.04;
+        const t = now + offset;
+        const dur = 0.12;
+        const bufferSize = Math.floor(ctx.sampleRate * dur);
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let j = 0; j < bufferSize; j++) {
+          data[j] = (Math.random() * 2 - 1) * Math.sin((j / bufferSize) * Math.PI);
+        }
+
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(800 + Math.random() * 400, t);
+        filter.Q.setValueAtTime(2.2, t);
+
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.12, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(ctx.destination);
+
+        noise.start(t);
+      }
+      // Cheerful songbird notes
+      this.playSuccessBirdChirp();
+    }
+
+    // Enthusiastic spoken Arabic praise for Hoor
+    if (this.voiceEnabled && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        const utterance = new SpeechSynthesisUtterance(customPhrase);
+        utterance.lang = 'ar-SA';
+        utterance.rate = 0.9;
+        utterance.pitch = 1.15; // Cheerful, warm tone
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        // Fallback silently if speech synthesis unavailable
+      }
+    }
+  }
+
+  /**
    * Offline English Word Pronunciation via Web Speech API
    */
   public speakEnglishWord(word: string) {

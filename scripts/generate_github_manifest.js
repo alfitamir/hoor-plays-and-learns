@@ -19,12 +19,15 @@ const INCLUDED_PATHS = [
   'scripts/bundle_html.js',
   'scripts/build_apk.sh',
   'scripts/generate_github_manifest.js',
-  'public/manifest.json',
-  'public/version.json',
-  'public/icon-192.svg',
-  'public/icon-512.svg',
+  'public/icon.svg',
+  'public/apple-touch-icon.png',
+  'public/pwa-192x192.png',
+  'public/pwa-512x512.png',
+  'public/pwa-maskable-512x512.png',
+  'public/twa-manifest.json',
   'public/assets/aistudio/10160185010238213_11fa6234.jpg',
   'public/Hoor-Plays-Learns.apk',
+  'public/Hoor-Plays-Learns-Android.html',
 ];
 
 function walkDir(dir, baseRel = '') {

@@ -1,0 +1,39 @@
+{
+  "packageId": "app.aistudio.hoor_plays_learns",
+  "host": "ais-pre-lfwx2oz5yaqjev6jjcfb4o-708730730945.europe-west1.run.app",
+  "name": "حور تلعب و تتعلم",
+  "launcherName": "حور تتعلم",
+  "display": "standalone",
+  "themeColor": "#0284C7",
+  "navigationColor": "#0284C7",
+  "navigationColorDark": "#0F172A",
+  "navigationDividerColor": "#E2E8F0",
+  "navigationDividerColorDark": "#1E293B",
+  "backgroundColor": "#F0F9FF",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://ais-pre-lfwx2oz5yaqjev6jjcfb4o-708730730945.europe-west1.run.app/pwa-512x512.png",
+  "maskableIconUrl": "https://ais-pre-lfwx2oz5yaqjev6jjcfb4o-708730730945.europe-west1.run.app/pwa-maskable-512x512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./android.keystore",
+    "alias": "hoor-key"
+  },
+  "appVersionName": "2.0.0-OTA",
+  "appVersionCode": 2,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://ais-pre-lfwx2oz5yaqjev6jjcfb4o-708730730945.europe-west1.run.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": false,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://ais-pre-lfwx2oz5yaqjev6jjcfb4o-708730730945.europe-west1.run.app/",
+  "minSdkVersion": 24,
+  "orientation": "portrait",
+  "fingerprints": []
+}

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Volume2, Heart, Unlock, Sparkles, RefreshCw, X, CheckCircle2, HelpCircle } from 'lucide-react';
-import { DifficultyLevel, EducationalQuestion, HOOR_PHOTO_URL, QuizOption, QuizPurpose, SubjectFilter } from '../types/game';
+import { AgeGroupId, DifficultyLevel, EducationalQuestion, HOOR_PHOTO_URL, QuizOption, QuizPurpose, SubjectFilter } from '../types/game';
 import { generateQuestion } from '../utils/questionGenerator';
 import { soundFX } from '../utils/soundEffects';
 
 interface QuizModalProps {
   purpose: QuizPurpose;
+  ageGroup?: AgeGroupId;
   difficulty: DifficultyLevel;
   subject: SubjectFilter;
   visualHelpers: boolean;
@@ -15,6 +16,7 @@ interface QuizModalProps {
 
 export const QuizModal: React.FC<QuizModalProps> = ({
   purpose,
+  ageGroup = '6_to_9',
   difficulty,
   subject,
   visualHelpers,
@@ -22,7 +24,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
   onClose,
 }) => {
   const [question, setQuestion] = useState<EducationalQuestion>(() =>
-    generateQuestion(difficulty, subject)
+    generateQuestion(difficulty, subject, ageGroup)
   );
   const [selectedOption, setSelectedOption] = useState<string | number | null>(null);
   const [status, setStatus] = useState<'idle' | 'correct' | 'wrong'>('idle');
@@ -42,7 +44,10 @@ export const QuizModal: React.FC<QuizModalProps> = ({
     if (status === 'correct') return;
     setSelectedOption(opt.value);
 
-    if (opt.value === question.correctValue) {
+    const isMatch =
+      String(opt.value).trim().toLowerCase() === String(question.correctValue).trim().toLowerCase();
+
+    if (isMatch) {
       setStatus('correct');
       soundFX.playSuccessBirdChirp();
       if (question.type === 'english' && question.englishWord) {
@@ -60,7 +65,7 @@ export const QuizModal: React.FC<QuizModalProps> = ({
 
   const handleNewQuestion = () => {
     soundFX.playWoodTap();
-    setQuestion(generateQuestion(difficulty, subject));
+    setQuestion(generateQuestion(difficulty, subject, ageGroup));
     setSelectedOption(null);
     setStatus('idle');
     setShowHint(false);
@@ -70,19 +75,19 @@ export const QuizModal: React.FC<QuizModalProps> = ({
     if (purpose.kind === 'unlock_level') {
       return {
         badge: `فتح المرحلة ${purpose.levelId}`,
-        title: `حلّي هذا السؤال البسيط لفتح المرحلة ${purpose.levelId} يا حور!`,
+        title: `حلّي هذا السؤال لفتح المرحلة ${purpose.levelId} يا بطلة!`,
         icon: <Unlock className="w-4 h-4 text-amber-600 shrink-0" />,
       };
     }
     if (purpose.kind === 'buy_life') {
       return {
         badge: 'هدية حياة جديدة',
-        title: 'أجيبي عن هذا السؤال السهل للحصول على قلب إضافي مجاناً!',
+        title: 'أجيبي عن هذا السؤال للحصول على قلب إضافي مجاناً!',
         icon: <Heart className="w-4 h-4 text-rose-600 fill-rose-500 shrink-0" />,
       };
     }
     return {
-      badge: 'تدريب البطلة حور',
+      badge: 'تدريب البطلة',
       title: 'هيّا نلعب ونتعلم معاً!',
       icon: <Sparkles className="w-4 h-4 text-sky-600 shrink-0" />,
     };
@@ -135,7 +140,35 @@ export const QuizModal: React.FC<QuizModalProps> = ({
             {question.promptAr}
           </p>
 
-          {/* Math Equation & Visual Counting Aid */}
+          {/* Type: Counting (Under 5) */}
+          {question.type === 'counting' && question.countA !== undefined && (
+            <div className="mt-4 flex flex-col items-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-2.5 bg-white p-4 rounded-3xl border border-sky-200 shadow-2xs max-w-xs mx-auto">
+                {Array.from({ length: question.countA }).map((_, idx) => (
+                  <span key={idx} className="text-4xl sm:text-5xl animate-bounce-short">
+                    {question.visualEmoji}
+                  </span>
+                ))}
+              </div>
+              <p className="text-xs font-extrabold text-slate-500">
+                عُدّي الأشكال بإصبعكِ ثم اختاري الرقم الصحيح!
+              </p>
+            </div>
+          )}
+
+          {/* Type: Shapes & Colors (Under 5) */}
+          {question.type === 'shapes' && (
+            <div className="mt-4 flex flex-col items-center gap-3">
+              <div className="w-24 h-24 rounded-3xl bg-white border border-sky-200 flex items-center justify-center text-6xl shadow-2xs">
+                {question.visualEmoji}
+              </div>
+              <p className="text-xs font-extrabold text-slate-500">
+                ما هو اسم هذا الشكل اللطيف؟
+              </p>
+            </div>
+          )}
+
+          {/* Type: Addition & Subtraction (6-9 & Under 5) */}
           {(question.type === 'addition' || question.type === 'subtraction') && (
             <div className="mt-4 space-y-4">
               <div
@@ -197,7 +230,38 @@ export const QuizModal: React.FC<QuizModalProps> = ({
             </div>
           )}
 
-          {/* English Word Visual & Audio Aid */}
+          {/* Type: Multiplication, Division, Equation, Powers & Percentages (10+) */}
+          {(question.type === 'multiplication' ||
+            question.type === 'division' ||
+            question.type === 'equation' ||
+            question.type === 'powers' ||
+            question.type === 'percentages') && (
+            <div className="mt-4 space-y-3">
+              <div
+                dir="ltr"
+                className="inline-block px-7 py-3 rounded-2xl bg-white border-2 border-purple-200 text-3xl sm:text-4xl font-black text-purple-950 tracking-wider font-english tabular-nums shadow-sm"
+              >
+                {question.equationDisplay}
+              </div>
+              <p className="text-xs font-bold text-slate-500">
+                فكّري بتركيز واحسبي القيمة بدقة يا بطلة!
+              </p>
+            </div>
+          )}
+
+          {/* Type: General Knowledge & Capitals (10+) */}
+          {question.type === 'general_knowledge' && (
+            <div className="mt-4 flex flex-col items-center gap-2">
+              <div className="w-16 h-16 rounded-2xl bg-white border border-indigo-200 flex items-center justify-center text-4xl shadow-2xs">
+                {question.visualEmoji}
+              </div>
+              <p className="text-xs font-black text-indigo-800 bg-indigo-50 px-3 py-1 rounded-xl border border-indigo-200">
+                اختبري معلوماتكِ وثقافتكِ العامة يا بطلة 🌍
+              </p>
+            </div>
+          )}
+
+          {/* Type: English Word Visual & Audio Aid */}
           {question.type === 'english' && (
             <div className="mt-4 flex flex-col items-center gap-3">
               <div className="flex items-center justify-center gap-4">

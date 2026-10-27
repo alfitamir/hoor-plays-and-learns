@@ -18,6 +18,8 @@ import {
   BookOpen,
 } from 'lucide-react';
 import {
+  AgeGroupId,
+  AGE_GROUPS,
   BiomeId,
   GameSettings,
   HOOR_PHOTO_URL,
@@ -25,17 +27,21 @@ import {
   PlayerProgress,
   QuizPurpose,
 } from './types/game';
-import { LEVELS } from './data/levels';
+import { LEVELS, getLevelsForAgeGroup } from './data/levels';
 import { soundFX } from './utils/soundEffects';
 import { QuizModal } from './components/QuizModal';
 import { SettingsModal } from './components/SettingsModal';
+import { AgeSelectionModal } from './components/AgeSelectionModal';
 import { ChickenGameCanvas } from './components/ChickenGameCanvas';
-import { PWAInstallButton, OfflineStatusBanner } from './components/PWAInstallButton';
+import { UnifiedTopNavSettings } from './components/UnifiedTopNavSettings';
+import { OfflineStatusBanner } from './components/PWAInstallButton';
 
-const STORAGE_SETTINGS_KEY = 'hoor_game_settings_v1';
-const STORAGE_PROGRESS_KEY = 'hoor_game_progress_v1';
+const STORAGE_SETTINGS_KEY = 'hoor_game_settings_v2';
+const STORAGE_PROGRESS_KEY = 'hoor_game_progress_v2';
+const STORAGE_AGE_SELECTED_KEY = 'hoor_has_selected_age_v2';
 
 const DEFAULT_SETTINGS: GameSettings = {
+  ageGroup: '6_to_9',
   difficulty: 'medium', // Default tailored for a 6-year-old
   subject: 'all',
   gameSpeed: 'normal',
@@ -51,6 +57,8 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   lives: 3,
   totalSolvedQuestions: 0,
   goldenEggs: 0,
+  weaponLevel: 1,
+  quranVersesCompleted: 0,
 };
 
 export default function App() {
@@ -72,10 +80,22 @@ export default function App() {
     }
   });
 
+  const [showAgeModal, setShowAgeModal] = useState<boolean>(() => {
+    try {
+      return !localStorage.getItem(STORAGE_AGE_SELECTED_KEY);
+    } catch {
+      return false;
+    }
+  });
+
   const [activeLevel, setActiveLevel] = useState<LevelConfig | null>(null);
   const [quizPurpose, setQuizPurpose] = useState<QuizPurpose | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [selectedBiomeFilter, setSelectedBiomeFilter] = useState<BiomeId | 'all'>('all');
+
+  const currentLevels = React.useMemo(() => {
+    return getLevelsForAgeGroup(settings.ageGroup);
+  }, [settings.ageGroup]);
 
   useEffect(() => {
     soundFX.setSettings(settings.soundEnabled, settings.voiceEnabled);
@@ -123,7 +143,7 @@ export default function App() {
         lives: Math.max(prev.lives, 3),
       }));
       setQuizPurpose(null);
-      const targetLevel = LEVELS.find((l) => l.id === targetId);
+      const targetLevel = currentLevels.find((l) => l.id === targetId);
       if (targetLevel) {
         setActiveLevel(targetLevel);
       }
@@ -162,42 +182,66 @@ export default function App() {
 
   const difficultyLabelAr =
     settings.difficulty === 'easy'
-      ? 'مبتدئ (أرقام حتى ٥)'
+      ? 'مبتدئ'
       : settings.difficulty === 'medium'
-      ? 'مناسب لعمر ٦ سنوات (حتى ١٠)'
-      : 'متقدم (أرقام حتى ٢٠)';
+      ? 'متوسط مناسب للفئة'
+      : 'تحدي الأذكياء';
 
   const subjectLabelAr =
     settings.subject === 'all'
-      ? 'جمع + طرح + كلمات إنجليزية'
+      ? 'شامل'
       : settings.subject === 'addition'
-      ? 'الجمع فقط'
+      ? 'الجمع'
       : settings.subject === 'subtraction'
-      ? 'الطرح فقط'
+      ? 'الطرح'
       : settings.subject === 'math'
-      ? 'الجمع والطرح'
-      : 'كلمات إنجليزية فقط';
+      ? 'الحساب'
+      : settings.subject === 'multiplication'
+      ? 'الضرب'
+      : settings.subject === 'advanced_math'
+      ? 'رياضيات متقدمة'
+      : settings.subject === 'general_knowledge'
+      ? 'عواصم ومعلومات عامة 🌍'
+      : 'إنجليزي';
 
   const visibleLevels =
     selectedBiomeFilter === 'all'
-      ? LEVELS
-      : LEVELS.filter((l) => l.biome === selectedBiomeFilter);
+      ? currentLevels
+      : currentLevels.filter((l) => l.biome === selectedBiomeFilter);
 
   return (
     <div className="min-h-screen flex flex-col bg-sky-50 text-slate-900">
       {/* Top Bar Contract: 3 Zones separated by gap-8 */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 py-3 flex items-center justify-between gap-8">
-        {/* Zone 1: Brand Wordmark */}
-        <button
-          type="button"
-          onClick={() => {
-            soundFX.playWoodTap();
-            setActiveLevel(null);
-          }}
-          className="text-lg sm:text-xl font-black tracking-tight text-sky-900 whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          حور تلعب و تتعلم
-        </button>
+      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 py-3 flex items-center justify-between gap-4 sm:gap-8">
+        {/* Zone 1: Brand Wordmark & Active Age Group Pill */}
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              soundFX.playWoodTap();
+              setActiveLevel(null);
+            }}
+            className="text-lg sm:text-xl font-black tracking-tight text-sky-900 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            حور تلعب و تتعلم
+          </button>
+
+          {/* Quick-Click Age Category Pill */}
+          <button
+            type="button"
+            onClick={() => {
+              soundFX.playWoodTap();
+              setShowAgeModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-2xl bg-sky-100 hover:bg-sky-200 text-sky-950 border border-sky-300 text-xs font-black transition-all cursor-pointer shadow-2xs hover:scale-102"
+            title="انقري لتغيير الفئة العمرية (تحت ٥ سنوات / ٦-٩ سنوات / ١٠ سنوات وأكثر)"
+          >
+            <span>{AGE_GROUPS[settings.ageGroup].icon}</span>
+            <span className="hidden md:inline">{AGE_GROUPS[settings.ageGroup].titleAr}</span>
+            <span className="md:hidden">{AGE_GROUPS[settings.ageGroup].badgeAr}</span>
+            <span className="text-[10px] text-sky-700 bg-white/80 px-1.5 py-0.5 rounded-md font-bold">تغيير ✏️</span>
+          </button>
+        </div>
 
         {/* Zone 2: Concise Single-Line Navigation Links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-bold text-slate-600">
@@ -243,22 +287,33 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary Action */}
+        {/* Zone 3: Unified Settings & Downloads Dropdown */}
         <div className="flex items-center gap-2.5 shrink-0">
-          <PWAInstallButton variant="header" />
+          <UnifiedTopNavSettings
+            settings={settings}
+            onUpdateSettings={setSettings}
+            onOpenSettingsModal={() => setShowSettings(true)}
+            onOpenAgeModal={() => setShowAgeModal(true)}
+          />
         </div>
       </header>
 
-      {/* Main Content Container */}
+      {/* Main Content Container (Clean & Streamlined) */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* Always-Visible Direct Android Download & OTA Bar */}
-        <PWAInstallButton variant="banner" />
 
         {activeLevel ? (
           <ChickenGameCanvas
             level={activeLevel}
             lives={progress.lives}
             settings={settings}
+            weaponLevel={progress.weaponLevel || 1}
+            onUpgradeWeapon={(newLevel) =>
+              setProgress((prev) => ({
+                ...prev,
+                weaponLevel: Math.max(prev.weaponLevel || 1, newLevel),
+                quranVersesCompleted: (prev.quranVersesCompleted || 0) + 1,
+              }))
+            }
             isNextLevelUnlocked={
               activeLevel.id < 20 && progress.unlockedLevels.includes(activeLevel.id + 1)
             }
@@ -274,7 +329,7 @@ export default function App() {
               setQuizPurpose({ kind: 'unlock_level', levelId: nextId })
             }
             onPlayNextLevel={(nextId) => {
-              const found = LEVELS.find((l) => l.id === nextId);
+              const found = currentLevels.find((l) => l.id === nextId);
               if (found) setActiveLevel(found);
             }}
             onExitToMap={() => setActiveLevel(null)}
@@ -284,8 +339,11 @@ export default function App() {
             {/* Hero Welcome & Quick Status Card */}
             <section className="rounded-3xl bg-white border border-slate-200 p-6 sm:p-8 shadow-2xs grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
               <div className="lg:col-span-7 space-y-4 text-right">
-                <div className="text-xs font-extrabold text-sky-700">
-                  لعبة تعليمية أوفلاين بدون موسيقى · مؤثرات صوتية طبيعية فقط · مصممة لعمر ٦ سنوات
+                <div className="flex flex-wrap items-center gap-2 text-xs font-extrabold text-sky-700">
+                  <span className="bg-sky-100 px-2.5 py-0.5 rounded-lg border border-sky-300">
+                    {AGE_GROUPS[settings.ageGroup].icon} {AGE_GROUPS[settings.ageGroup].titleAr} ({AGE_GROUPS[settings.ageGroup].badgeAr})
+                  </span>
+                  <span>· لعبة تعليمية طبيعية بدون موسيقى · أوفلاين ١٠٠٪</span>
                 </div>
 
                 <h1
@@ -296,12 +354,12 @@ export default function App() {
                 </h1>
 
                 <p className="text-sm sm:text-base font-bold text-slate-600 leading-relaxed max-w-2xl">
-                  اصطادي الدجاجات اللطيفة عبر ٢٠ مرحلة متباعدة وممتعة! لفتح أي مرحلة جديدة أو الحصول على حياة إضافية، حلّي مسألة بسيطة جداً في الجمع أو الطرح أو الكلمات الإنجليزية المصوّرة.
+                  {AGE_GROUPS[settings.ageGroup].descriptionAr}
                 </p>
 
                 {/* Unboxed Clean Metadata Row */}
                 <div className="flex flex-wrap items-center gap-2 text-xs font-extrabold text-slate-500 pt-1">
-                  <span>المستوى الحالي: {difficultyLabelAr}</span>
+                  <span>المستوى: {difficultyLabelAr}</span>
                   <span aria-hidden="true">·</span>
                   <span>الموضوعات: {subjectLabelAr}</span>
                   <span aria-hidden="true">·</span>
@@ -316,7 +374,7 @@ export default function App() {
                     type="button"
                     onClick={() => {
                       const highestUnlocked = Math.max(...progress.unlockedLevels);
-                      const lvl = LEVELS.find((l) => l.id === highestUnlocked) || LEVELS[0];
+                      const lvl = currentLevels.find((l) => l.id === highestUnlocked) || currentLevels[0];
                       handleSelectStage(lvl);
                     }}
                     className="flex items-center gap-2.5 px-6 py-3.5 min-h-[52px] rounded-2xl bg-sky-600 hover:bg-sky-700 active:scale-95 text-white font-black text-base shadow-sm transition-transform cursor-pointer whitespace-nowrap"
@@ -325,6 +383,17 @@ export default function App() {
                     <span>
                       ابدئي اللعب الآن (المرحلة {Math.max(...progress.unlockedLevels)})
                     </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundFX.playWoodTap();
+                      setShowAgeModal(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-3.5 min-h-[52px] rounded-2xl bg-sky-100 hover:bg-sky-200 border border-sky-300 text-sky-900 font-black text-xs sm:text-sm transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    <span>{AGE_GROUPS[settings.ageGroup].icon} تغيير الفئة العمرية</span>
                   </button>
 
                   <button
@@ -663,11 +732,31 @@ export default function App() {
       {quizPurpose && (
         <QuizModal
           purpose={quizPurpose}
+          ageGroup={settings.ageGroup}
           difficulty={settings.difficulty}
           subject={settings.subject}
           visualHelpers={settings.visualHelpers}
           onSuccess={handleQuizSuccess}
           onClose={() => setQuizPurpose(null)}
+        />
+      )}
+
+      {/* Dedicated Age Category Selection Modal */}
+      {showAgeModal && (
+        <AgeSelectionModal
+          currentAgeGroup={settings.ageGroup}
+          canDismiss={true}
+          onSelectAgeGroup={(ageGroup) => {
+            soundFX.playSuccessBirdChirp();
+            setSettings((prev) => ({ ...prev, ageGroup }));
+            try {
+              localStorage.setItem(STORAGE_AGE_SELECTED_KEY, 'true');
+            } catch {
+              // ignore quota
+            }
+            setShowAgeModal(false);
+          }}
+          onClose={() => setShowAgeModal(false)}
         />
       )}
 
@@ -679,7 +768,7 @@ export default function App() {
           onUnlockAllLevels={() =>
             setProgress((prev) => ({
               ...prev,
-              unlockedLevels: LEVELS.map((l) => l.id),
+              unlockedLevels: currentLevels.map((l) => l.id),
             }))
           }
           onResetProgress={() => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   CheckCircle2,
@@ -6,7 +6,9 @@ import {
   Play,
   RotateCcw,
   Volume2,
+  VolumeX,
   BookOpen,
+  User,
 } from 'lucide-react';
 import {
   EducationalQuestion,
@@ -14,10 +16,19 @@ import {
   SubjectFilter,
   HOOR_PHOTO_URL,
   QuizOption,
+  AgeGroupId,
+  AGE_GROUPS,
+  WEAPON_TIERS,
+  WeaponConfig,
 } from '../types/game';
 import { generateQuestion } from '../utils/questionGenerator';
 import { soundFX } from '../utils/soundEffects';
-import { getVerseBetweenLevels } from '../data/quranVerses';
+import {
+  getVerseBetweenLevels,
+  getAyahAudioUrl,
+  RECITERS,
+  ReciterId,
+} from '../data/quranVerses';
 
 interface BetweenLevelsModalProps {
   completedLevelId: number;
@@ -25,9 +36,12 @@ interface BetweenLevelsModalProps {
   score: number;
   lives: number;
   targetChickens: number;
+  ageGroup?: AgeGroupId;
   difficulty: DifficultyLevel;
   subject: SubjectFilter;
   visualHelpers: boolean;
+  weaponLevel?: number;
+  onUpgradeWeapon?: (newLevel: number) => void;
   onContinueToNextLevel: () => void;
   onReplayLevel: () => void;
   onExitToMap: () => void;
@@ -37,22 +51,160 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
   completedLevelId,
   nextLevelId,
   score,
+  ageGroup = '6_to_9',
   difficulty,
   subject,
   visualHelpers,
+  weaponLevel = 1,
+  onUpgradeWeapon,
   onContinueToNextLevel,
   onReplayLevel,
   onExitToMap,
 }) => {
   const [question, setQuestion] = useState<EducationalQuestion>(() =>
-    generateQuestion(difficulty, subject)
+    generateQuestion(difficulty, subject, ageGroup)
   );
   const [selectedOption, setSelectedOption] = useState<QuizOption | null>(null);
   const [isAnswerCorrect, setIsAnswerCorrect] = useState<boolean | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [activeStep, setActiveStep] = useState<'quran_and_quiz' | 'unlocked'>('quran_and_quiz');
 
+  // Famous Reciter State
+  const [reciter, setReciter] = useState<ReciterId>('alafasy');
+  const [isPlayingAyah, setIsPlayingAyah] = useState(false);
+  const [audioError, setAudioError] = useState(false);
+  const [isAyahCompleted, setIsAyahCompleted] = useState(false);
+  const [newWeaponAwarded, setNewWeaponAwarded] = useState<WeaponConfig | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const verse = getVerseBetweenLevels(completedLevelId, nextLevelId);
+
+  // Play celebratory cheer + automatically start Quran recitation upon entering
+  useEffect(() => {
+    // 1. Celebratory cheer sound and voice for Hoor
+    soundFX.playCelebrationCheer(`أحسنتِ يا حور يا بطلة! مبروك إتمام المرحلة ${completedLevelId}!`);
+
+    // 2. Auto-play Quran recitation after short delay so cheer finishes
+    const timer = setTimeout(() => {
+      startRecitation(reciter);
+    }, 1400);
+
+    return () => {
+      clearTimeout(timer);
+      stopCurrentAudio();
+    };
+  }, [completedLevelId]);
+
+  const stopCurrentAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlayingAyah(false);
+  };
+
+  // Trigger weapon upgrade upon fully finishing Quranic recitation
+  const handleAyahFullyListened = () => {
+    setIsPlayingAyah(false);
+    setIsAyahCompleted(true);
+
+    const nextLvl = Math.min(4, weaponLevel + 1);
+    const awarded = WEAPON_TIERS[nextLvl];
+    setNewWeaponAwarded(awarded);
+
+    if (onUpgradeWeapon) {
+      onUpgradeWeapon(nextLvl);
+    }
+
+    soundFX.playSuccessBirdChirp();
+    setTimeout(() => {
+      soundFX.playCelebrationCheer(
+        `ما شاء الله يا حور! ببركة الاستماع للقرآن الكريم، حصلتِ على ${awarded.nameAr}!`
+      );
+    }, 500);
+  };
+
+  const startRecitation = (reciterChoice: ReciterId) => {
+    stopCurrentAudio();
+    setIsPlayingAyah(true);
+    setAudioError(false);
+
+    const urls = getAyahAudioUrl(verse.surahNumber, verse.ayahNumber, reciterChoice);
+    let urlIndex = 0;
+
+    const playNextUrl = () => {
+      if (urlIndex >= urls.length) {
+        // Fallback to offline speech synthesis
+        fallbackSpeechRecitation();
+        return;
+      }
+
+      const audio = new Audio(urls[urlIndex]);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        handleAyahFullyListened();
+      };
+
+      audio.onerror = () => {
+        urlIndex++;
+        playNextUrl();
+      };
+
+      audio
+        .play()
+        .then(() => {
+          setIsPlayingAyah(true);
+        })
+        .catch(() => {
+          urlIndex++;
+          playNextUrl();
+        });
+    };
+
+    playNextUrl();
+  };
+
+  const fallbackSpeechRecitation = () => {
+    const cleanText = verse.verseText.replace(/[﴿﴾]/g, '').trim();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'ar-SA';
+      utterance.rate = 0.85;
+      utterance.pitch = 1.05;
+      utterance.onend = () => {
+        handleAyahFullyListened();
+      };
+      utterance.onerror = () => {
+        setIsPlayingAyah(false);
+        setAudioError(true);
+      };
+      window.speechSynthesis.speak(utterance);
+    } else {
+      setIsPlayingAyah(false);
+      setAudioError(true);
+    }
+  };
+
+  const handleTogglePlayRecitation = () => {
+    soundFX.playWoodTap();
+    if (isPlayingAyah) {
+      stopCurrentAudio();
+    } else {
+      startRecitation(reciter);
+    }
+  };
+
+  const handleChangeReciter = (newReciter: ReciterId) => {
+    soundFX.playWoodTap();
+    setReciter(newReciter);
+    startRecitation(newReciter);
+  };
 
   const handleSelectOption = (opt: QuizOption) => {
     if (selectedOption !== null && isAnswerCorrect) return;
@@ -78,23 +230,10 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
 
   const handleTryAnotherQuestion = () => {
     soundFX.playWoodTap();
-    setQuestion(generateQuestion(difficulty, subject));
+    setQuestion(generateQuestion(difficulty, subject, ageGroup));
     setSelectedOption(null);
     setIsAnswerCorrect(null);
     setShowExplanation(false);
-  };
-
-  const handleReciteVerse = () => {
-    soundFX.playWoodTap();
-    const cleanText = verse.verseText.replace(/[﴿﴾]/g, '').trim();
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = 'ar-SA';
-      utterance.rate = 0.85;
-      utterance.pitch = 1.05;
-      window.speechSynthesis.speak(utterance);
-    }
   };
 
   return (
@@ -115,8 +254,9 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
               </div>
             </div>
             <div>
-              <div className="text-xs font-extrabold text-emerald-700">
-                مبروك يا بطلة حور! اكتملت المرحلة {completedLevelId} بنجاح
+              <div className="text-xs font-extrabold text-emerald-700 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
+                <span>أحسنتِ يا بطلة حور! اكتملت المرحلة {completedLevelId} بنجاح</span>
               </div>
               <h3 className="text-lg sm:text-xl font-black text-slate-900">
                 بين المرحلتين ({completedLevelId} ⬅️ {nextLevelId})
@@ -130,39 +270,142 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
           </div>
         </div>
 
-        {/* 1. Inspiring Quranic Ayah Card with Full Diacritics */}
-        <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-2 border-emerald-300 p-4 space-y-2 relative overflow-hidden shadow-xs">
-          <div className="flex items-center justify-between text-xs font-black text-emerald-900">
-            <span className="flex items-center gap-1.5 bg-white/90 px-3 py-1 rounded-lg border border-emerald-300">
-              <BookOpen className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-              <span>آية قرآنية مباركة بين المرحلتين</span>
+        {/* 1. Inspiring Quranic Ayah Card with Famous Reciter Voice & Auto-Play */}
+        <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-2 border-emerald-300 p-4 space-y-3 relative overflow-hidden shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-black text-emerald-900">
+            <span className="flex items-center gap-1.5 bg-white/95 px-3 py-1 rounded-lg border border-emerald-300 shadow-2xs">
+              <BookOpen className="w-4 h-4 text-emerald-700 shrink-0" />
+              <span>تلاوة قرآنية مباركة (تشتغل تلقائياً)</span>
             </span>
-            <span className="text-[11px] font-bold text-emerald-800">
+            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/70 px-2.5 py-0.5 rounded-lg border border-emerald-200">
               {verse.surahName} · الآية {verse.ayahNumber}
             </span>
           </div>
 
           {/* Ayah Calligraphy Box */}
-          <div className="text-center py-2 px-3 bg-white/90 rounded-xl border border-emerald-200">
-            <p className="text-lg sm:text-2xl font-bold leading-loose text-emerald-950">
+          <div className="text-center py-3 px-4 bg-white/95 rounded-2xl border border-emerald-200 shadow-inner">
+            <p className="text-xl sm:text-2xl font-bold leading-loose text-emerald-950 font-serif" dir="rtl">
               {verse.verseText}
             </p>
           </div>
 
-          <div className="flex items-center justify-between gap-2 pt-1 text-xs">
-            <p className="text-slate-700 font-bold leading-relaxed flex-1">
-              🌟 {verse.reflectionAr}
-            </p>
-            <button
-              type="button"
-              onClick={handleReciteVerse}
-              className="px-3 py-1.5 min-h-[36px] rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1 shrink-0 cursor-pointer"
-              title="الاستماع للآية"
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-              <span>استماع</span>
-            </button>
+          {/* Reciter Selector & Audio Playback Wave */}
+          <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 text-[11px] font-black text-slate-700">
+                <User className="w-3.5 h-3.5 text-emerald-600" />
+                <span>القارئ:</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => handleChangeReciter('alafasy')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    reciter === 'alafasy'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  الشيخ مشاري العفاسي
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChangeReciter('husary')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    reciter === 'husary'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                >
+                  الشيخ الحصري (المعلم)
+                </button>
+              </div>
+            </div>
+
+            {/* Audio Wave and Play/Pause Button */}
+            <div className="flex items-center gap-3">
+              {isPlayingAyah && (
+                <div className="flex items-end gap-1 h-5 px-1">
+                  <span className="w-1 bg-emerald-600 rounded-full animate-bounce h-4" />
+                  <span className="w-1 bg-emerald-500 rounded-full animate-bounce h-5 delay-75" />
+                  <span className="w-1 bg-emerald-400 rounded-full animate-bounce h-3 delay-150" />
+                  <span className="w-1 bg-emerald-600 rounded-full animate-bounce h-5 delay-100" />
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={handleTogglePlayRecitation}
+                className={`px-3.5 py-1.5 min-h-[38px] rounded-xl font-black text-xs flex items-center gap-1.5 shrink-0 cursor-pointer transition-all shadow-xs ${
+                  isPlayingAyah
+                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
+                title={isPlayingAyah ? 'إيقاف مؤقت' : 'استماع للتلاوة'}
+              >
+                {isPlayingAyah ? (
+                  <>
+                    <VolumeX className="w-4 h-4" />
+                    <span>إيقاف التلاوة</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-4 h-4" />
+                    <span>تشغيل بصوت {RECITERS[reciter].nameAr.split(' ')[1]}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
+
+          <div className="text-xs text-slate-700 font-bold leading-relaxed px-1">
+            🌟 {verse.reflectionAr}
+          </div>
+
+          {/* Weapon Upgrade Reward Banner based on listening to the Ayah */}
+          {newWeaponAwarded ? (
+            <div className="rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 p-3.5 text-slate-950 font-black shadow-md border-2 border-amber-600 animate-in zoom-in-95 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-12 h-12 rounded-2xl bg-white text-3xl flex items-center justify-center shadow-xs shrink-0">
+                  {newWeaponAwarded.icon}
+                </div>
+                <div>
+                  <div className="text-[11px] font-extrabold text-amber-950/80">
+                    🌟 هدية بركة الاستماع للقرآن الكريم:
+                  </div>
+                  <div className="text-sm font-black text-slate-950">
+                    تم فتح سلاح جديد أقوى: {newWeaponAwarded.nameAr} ⚡
+                  </div>
+                  <div className="text-[11px] font-bold text-slate-800">
+                    {newWeaponAwarded.subtitleAr} (متاح للمرحلة {nextLevelId})
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs bg-slate-950 text-white px-3 py-1.5 rounded-xl shrink-0 font-black shadow-2xs">
+                مفعّل الآن ✅
+              </span>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-white/80 p-2.5 border border-emerald-300 flex items-center justify-between gap-2 text-xs font-black text-emerald-900">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎧</span>
+                <span>
+                  {isPlayingAyah
+                    ? 'جاري الاستماع للآية... عند انتهائها ستحصلين على سلاح أقوى للمرحلة القادمة!'
+                    : 'استمعي للآية الكريمة كاملة للحصول على ترقية سلاح خارق للمرحلة القادمة!'}
+                </span>
+              </div>
+              {!isPlayingAyah && (
+                <button
+                  type="button"
+                  onClick={() => startRecitation(reciter)}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-black cursor-pointer shrink-0 hover:bg-emerald-700"
+                >
+                  استماع الآن 🔊
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* 2. Educational Quiz Section to Unlock the Next Stage */}
@@ -171,19 +414,38 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-black text-amber-900">
                 <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>حلّي هذا السؤال البسيط جداً لفتح المرحلة {nextLevelId}:</span>
+                <span>حلّي هذا السؤال لفتح المرحلة {nextLevelId}:</span>
               </div>
               <span className="text-[11px] font-extrabold text-amber-800 bg-white px-2.5 py-0.5 rounded-lg border border-amber-200">
-                عمر ٦ سنوات
+                {AGE_GROUPS[ageGroup].badgeAr}
               </span>
             </div>
 
-            {/* Question Text & Equation */}
-            <div className="text-center py-2 bg-white rounded-xl border border-amber-200">
+            {/* Question Text & Visual Display */}
+            <div className="text-center py-2.5 px-3 bg-white rounded-xl border border-amber-200">
               <div className="text-base sm:text-lg font-black text-slate-900">
                 {question.promptAr}
               </div>
 
+              {/* Counting Objects (Under 5) */}
+              {question.type === 'counting' && question.countA !== undefined && (
+                <div className="mt-3 flex items-center justify-center gap-2 bg-amber-50/80 p-3 rounded-2xl border border-amber-200">
+                  {Array.from({ length: question.countA }).map((_, i) => (
+                    <span key={i} className="text-3xl">
+                      {question.visualEmoji}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Shape / Color Question (Under 5) */}
+              {question.type === 'shapes' && (
+                <div className="mt-2 text-5xl">
+                  {question.visualEmoji}
+                </div>
+              )}
+
+              {/* Equation Display (Math, Multiplication, Division, Algebra) */}
               {question.equationDisplay && (
                 <div
                   dir="ltr"
@@ -193,8 +455,8 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
                 </div>
               )}
 
-              {/* Visual Helpers (Apples/Birds/Counting) */}
-              {visualHelpers && question.countA !== undefined && question.countB !== undefined && (
+              {/* Visual Helpers (Apples/Birds/Counting for Addition & Subtraction) */}
+              {visualHelpers && (question.type === 'addition' || question.type === 'subtraction') && question.countA !== undefined && question.countB !== undefined && (
                 <div className="mt-3 flex items-center justify-center gap-3 flex-wrap">
                   <div className="flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
                     {Array.from({ length: question.countA }).map((_, i) => (
@@ -220,6 +482,20 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* English Word audio aid */}
+              {question.type === 'english' && question.englishWord && (
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => soundFX.speakEnglishWord(question.englishWord!)}
+                    className="px-3 py-1 bg-sky-100 text-sky-800 rounded-lg text-xs font-black flex items-center gap-1 cursor-pointer"
+                  >
+                    <Volume2 className="w-3.5 h-3.5" />
+                    <span className="font-english">{question.englishWord}</span>
+                  </button>
                 </div>
               )}
             </div>

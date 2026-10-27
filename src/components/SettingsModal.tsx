@@ -1,6 +1,6 @@
 import React from 'react';
-import { Sliders, Volume2, VolumeX, Eye, RotateCcw, Unlock, X, Check } from 'lucide-react';
-import { DifficultyLevel, GameSettings, GameSpeed, SubjectFilter } from '../types/game';
+import { Sliders, Volume2, VolumeX, Eye, RotateCcw, Unlock, X, Check, Users } from 'lucide-react';
+import { AGE_GROUPS, AgeGroupId, DifficultyLevel, GameSettings, GameSpeed, SubjectFilter } from '../types/game';
 import { soundFX } from '../utils/soundEffects';
 
 interface SettingsModalProps {
@@ -20,6 +20,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [confirmReset, setConfirmReset] = React.useState(false);
   const [unlockedToast, setUnlockedToast] = React.useState(false);
+
+  const setAgeGroup = (ageGroup: AgeGroupId) => {
+    soundFX.playWoodTap();
+    onUpdateSettings({ ...settings, ageGroup });
+  };
 
   const setDifficulty = (difficulty: DifficultyLevel) => {
     soundFX.playWoodTap();
@@ -69,6 +74,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="mt-5 space-y-6">
+          {/* 0. Age Category Selection */}
+          <div className="p-4 rounded-2xl bg-sky-50/80 border border-sky-200">
+            <div className="flex items-center gap-2 mb-2.5">
+              <Users className="w-4 h-4 text-sky-700" />
+              <label className="text-sm font-black text-slate-900">
+                الفئة العمرية للطفل (تكييف فوري للمسائل وسرعة اللعبة):
+              </label>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {(['under_5', '6_to_9', '10_plus'] as AgeGroupId[]).map((id) => {
+                const info = AGE_GROUPS[id];
+                const active = settings.ageGroup === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setAgeGroup(id)}
+                    className={`p-3 rounded-2xl border-2 text-right transition-all cursor-pointer flex flex-col justify-between ${
+                      active
+                        ? 'bg-white border-sky-600 shadow-xs'
+                        : 'bg-white/60 border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <div className="flex items-center gap-1.5 font-black text-xs sm:text-sm text-slate-900">
+                        <span>{info.icon}</span>
+                        <span>{info.titleAr}</span>
+                      </div>
+                      {active && <Check className="w-4 h-4 text-sky-600 shrink-0" />}
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 mt-1 leading-snug">
+                      {info.badgeAr}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* 1. Difficulty Level */}
           <div>
             <label className="block text-sm font-extrabold text-slate-900 mb-2.5">
@@ -122,11 +166,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {[
-                { id: 'all' as SubjectFilter, label: 'شامل (جمع + طرح + إنجليزي)' },
+                { id: 'all' as SubjectFilter, label: 'شامل الفئة العمرية' },
+                { id: 'general_knowledge' as SubjectFilter, label: 'عواصم ومعلومات عامة 🌍' },
                 { id: 'addition' as SubjectFilter, label: 'الجمع فقط (➕)' },
                 { id: 'subtraction' as SubjectFilter, label: 'الطرح فقط (➖)' },
-                { id: 'math' as SubjectFilter, label: 'حساب فقط (جمع وطرح)' },
-                { id: 'english' as SubjectFilter, label: 'كلمات إنجليزية فقط (🔤)' },
+                { id: 'multiplication' as SubjectFilter, label: 'الضرب فقط (✖️)' },
+                { id: 'advanced_math' as SubjectFilter, label: 'رياضيات وجبر متقدم (⚡)' },
+                { id: 'english' as SubjectFilter, label: 'كلمات إنجليزية (🔤)' },
               ].map((sub) => {
                 const active = settings.subject === sub.id;
                 return (

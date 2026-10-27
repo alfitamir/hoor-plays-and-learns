@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Heart, Pause, Play, ArrowRight, Sparkles, Trophy, RotateCcw, Unlock } from 'lucide-react';
-import { GameSettings, HOOR_PHOTO_URL, LevelConfig } from '../types/game';
+import { Heart, Pause, Play, ArrowRight, Sparkles, Trophy, RotateCcw, Unlock, Zap } from 'lucide-react';
+import { GameSettings, HOOR_PHOTO_URL, LevelConfig, WEAPON_TIERS } from '../types/game';
 import { soundFX } from '../utils/soundEffects';
 import { BetweenLevelsModal } from './BetweenLevelsModal';
 
@@ -9,6 +9,8 @@ interface ChickenGameCanvasProps {
   lives: number;
   settings: GameSettings;
   isNextLevelUnlocked: boolean;
+  weaponLevel?: number;
+  onUpgradeWeapon?: (level: number) => void;
   onChangeLives: (delta: number) => void;
   onRequestBuyLife: () => void;
   onLevelComplete: (levelId: number, score: number, stars: number) => void;
@@ -40,6 +42,9 @@ interface CornShot {
   y: number;
   vx: number;
   vy: number;
+  damage: number;
+  color: string;
+  size: number;
 }
 
 interface FallingItem {
@@ -65,6 +70,8 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
   lives,
   settings,
   isNextLevelUnlocked,
+  weaponLevel = 1,
+  onUpgradeWeapon,
   onChangeLives,
   onRequestBuyLife,
   onLevelComplete,
@@ -214,35 +221,93 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
     resetStage();
   }, [level.id, resetStage]);
 
-  // Shoot corn projectile toward target point or straight up
-  const fireCorn = useCallback((aimX?: number, aimY?: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const w = worldRef.current;
-    const startX = w.playerX;
-    const startY = canvas.height - 62;
+  // Shoot corn projectile toward target point or straight up with upgraded weapon tiers
+  const fireCorn = useCallback(
+    (aimX?: number, aimY?: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const w = worldRef.current;
+      const startX = w.playerX;
+      const startY = canvas.height - 62;
 
-    let vx = 0;
-    let vy = -9.5;
+      const activeWeapon = WEAPON_TIERS[weaponLevel] || WEAPON_TIERS[1];
+      const baseSpeed = activeWeapon.speed || 10.5;
 
-    if (aimX !== undefined && aimY !== undefined && aimY < startY - 20) {
-      const dx = aimX - startX;
-      const dy = aimY - startY;
-      const dist = Math.hypot(dx, dy) || 1;
-      const speed = 10.5;
-      vx = (dx / dist) * speed;
-      vy = (dy / dist) * speed;
-    }
+      let targetAngle = -Math.PI / 2; // straight up
+      if (aimX !== undefined && aimY !== undefined && aimY < startY - 20) {
+        targetAngle = Math.atan2(aimY - startY, aimX - startX);
+      }
 
-    w.shots.push({
-      id: w.nextId++,
-      x: startX,
-      y: startY,
-      vx,
-      vy,
-    });
-    soundFX.playPop();
-  }, []);
+      const count = activeWeapon.projectileCount;
+      const damage = activeWeapon.damage;
+      const color = activeWeapon.projectileColor;
+
+      if (count === 1) {
+        w.shots.push({
+          id: w.nextId++,
+          x: startX,
+          y: startY,
+          vx: Math.cos(targetAngle) * baseSpeed,
+          vy: Math.sin(targetAngle) * baseSpeed,
+          damage,
+          color,
+          size: 7,
+        });
+      } else if (count === 2) {
+        // Parallel dual shots
+        const normalAngle = targetAngle + Math.PI / 2;
+        const offsetX = Math.cos(normalAngle) * 12;
+        const offsetY = Math.sin(normalAngle) * 12;
+        [-1, 1].forEach((dir) => {
+          w.shots.push({
+            id: w.nextId++,
+            x: startX + offsetX * dir,
+            y: startY + offsetY * dir,
+            vx: Math.cos(targetAngle) * baseSpeed,
+            vy: Math.sin(targetAngle) * baseSpeed,
+            damage,
+            color,
+            size: 8,
+          });
+        });
+      } else if (count === 3) {
+        // Triple fan spread (-12 deg, 0, +12 deg)
+        const spreadAngles = [-0.21, 0, 0.21];
+        spreadAngles.forEach((offset) => {
+          const angle = targetAngle + offset;
+          w.shots.push({
+            id: w.nextId++,
+            x: startX,
+            y: startY,
+            vx: Math.cos(angle) * baseSpeed,
+            vy: Math.sin(angle) * baseSpeed,
+            damage,
+            color,
+            size: 8.5,
+          });
+        });
+      } else {
+        // 5-way royal spread
+        const spreadAngles = [-0.34, -0.17, 0, 0.17, 0.34];
+        spreadAngles.forEach((offset) => {
+          const angle = targetAngle + offset;
+          w.shots.push({
+            id: w.nextId++,
+            x: startX,
+            y: startY,
+            vx: Math.cos(angle) * baseSpeed,
+            vy: Math.sin(angle) * baseSpeed,
+            damage,
+            color,
+            size: 9,
+          });
+        });
+      }
+
+      soundFX.playPop();
+    },
+    [weaponLevel]
+  );
 
   // Handle pointer tap / drag on canvas
   const handlePointerDownOrMove = (
@@ -359,7 +424,7 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
             ch.vx = -Math.abs(ch.vx);
           }
 
-          // Occasional egg drop
+          // Occasional egg drop (speed scales dynamically with level progression)
           if (
             Math.random() < level.eggDropRate * userSpeedFactor &&
             w.falling.length < 4
@@ -368,7 +433,7 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
               id: w.nextId++,
               x: ch.x,
               y: ch.y + ch.radius * 0.6,
-              vy: (2.1 + Math.random() * 0.9) * userSpeedFactor,
+              vy: (2.2 + level.speedMultiplier * 1.35 + Math.random() * 0.8) * userSpeedFactor,
               kind: Math.random() < 0.25 ? 'golden_feather' : 'egg',
             });
           }
@@ -391,7 +456,7 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
             const dist = Math.hypot(s.x - ch.x, s.y - ch.y);
             if (dist <= ch.radius + 10) {
               hit = true;
-              ch.hp -= 1;
+              ch.hp -= (s.damage || 1);
               ch.hitFlash = 6;
 
               if (ch.hp <= 0) {
@@ -552,17 +617,23 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
       ctx.closePath();
       ctx.fill();
 
-      // Draw Corn Shots
+      // Draw Corn Shots with weapon tier colors and glowing energy
       for (const s of w.shots) {
         ctx.save();
         ctx.translate(s.x, s.y);
-        ctx.fillStyle = '#facc15';
-        ctx.strokeStyle = '#ca8a04';
-        ctx.lineWidth = 2;
+        ctx.fillStyle = s.color || '#facc15';
+        ctx.strokeStyle = s.damage >= 3 ? '#ffffff' : s.damage >= 2 ? '#fef08a' : '#ca8a04';
+        ctx.lineWidth = s.damage >= 2 ? 2.5 : 2;
         ctx.beginPath();
-        ctx.arc(0, 0, 7, 0, Math.PI * 2);
+        ctx.arc(0, 0, s.size || 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+
+        if (s.damage >= 2) {
+          ctx.shadowColor = s.color || '#f59e0b';
+          ctx.shadowBlur = 10;
+          ctx.fill();
+        }
         ctx.restore();
       }
 
@@ -597,101 +668,227 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
         ctx.restore();
       }
 
-      // Draw Chickens
+      // Draw Chickens (Enhanced Cartoon Style with Bouncing Comb, Blinking Eyes, Wattle & Feet)
       for (const ch of w.chickens) {
         ctx.save();
         ctx.translate(ch.x, ch.y);
 
         const r = ch.radius;
-        const wingFlapY = Math.sin(ch.wingPhase) * (r * 0.35);
+        const wingFlap = Math.sin(ch.wingPhase);
+        const wingFlapY = wingFlap * (r * 0.42);
+        const combSway = Math.sin(ch.wingPhase * 0.8) * (r * 0.08);
 
-        // Flapping Wings
-        ctx.fillStyle =
-          ch.color === 'gold' || ch.color === 'boss'
-            ? '#fde047'
-            : ch.color === 'brown'
-            ? '#fed7aa'
-            : '#f8fafc';
+        // Blinking calculation (brief blink every ~180 frames)
+        const isBlinking = (w.frameCount + ch.id * 37) % 190 < 6;
+
+        // 1. Cute Little Feet (wiggle gently with flight)
+        const footWiggle = Math.sin(ch.wingPhase * 1.2) * 2;
+        ctx.fillStyle = '#f97316';
+        ctx.strokeStyle = '#c2410c';
+        ctx.lineWidth = 1.8;
+        [-r * 0.28, r * 0.28].forEach((fx, idx) => {
+          ctx.beginPath();
+          ctx.ellipse(fx, r * 0.82 + (idx === 0 ? footWiggle : -footWiggle), 4, 7, (idx === 0 ? -0.2 : 0.2), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        // 2. Flapping Wings with Scalloped Feather Detail
+        ctx.lineWidth = 2.4;
         ctx.strokeStyle = '#1e293b';
-        ctx.lineWidth = 2.5;
 
         // Left Wing
-        ctx.beginPath();
-        ctx.ellipse(-r * 0.95, wingFlapY * 0.5, r * 0.42, r * 0.26, -0.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Right Wing
-        ctx.beginPath();
-        ctx.ellipse(r * 0.95, wingFlapY * 0.5, r * 0.42, r * 0.26, 0.3, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Chicken Body
+        ctx.save();
         ctx.fillStyle =
-          ch.hitFlash > 0
-            ? '#fecdd3'
-            : ch.color === 'gold' || ch.color === 'boss'
-            ? '#facc15'
+          ch.color === 'boss'
+            ? '#a855f7' // Majestic royal purple for Boss Rooster
+            : ch.color === 'gold'
+            ? '#fef08a'
             : ch.color === 'brown'
             ? '#fdba74'
-            : '#ffffff';
+            : '#f1f5f9';
         ctx.beginPath();
-        ctx.ellipse(0, 0, r, r * 0.88, 0, 0, Math.PI * 2);
+        ctx.ellipse(-r * 0.96, wingFlapY * 0.6, r * 0.46, r * 0.28, -0.32 + wingFlap * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // Right Wing
+        ctx.save();
+        ctx.fillStyle =
+          ch.color === 'boss'
+            ? '#a855f7'
+            : ch.color === 'gold'
+            ? '#fef08a'
+            : ch.color === 'brown'
+            ? '#fdba74'
+            : '#f1f5f9';
+        ctx.beginPath();
+        ctx.ellipse(r * 0.96, wingFlapY * 0.6, r * 0.46, r * 0.28, 0.32 - wingFlap * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // 3. Plump Chicken Body with Soft Shading & Radial Gradient
+        ctx.save();
+        const bodyGrad = ctx.createRadialGradient(-r * 0.2, -r * 0.2, r * 0.1, 0, 0, r);
+        if (ch.hitFlash > 0) {
+          bodyGrad.addColorStop(0, '#ffffff');
+          bodyGrad.addColorStop(1, '#f43f5e');
+        } else if (ch.color === 'boss') {
+          bodyGrad.addColorStop(0, '#fef08a');
+          bodyGrad.addColorStop(0.7, '#facc15');
+          bodyGrad.addColorStop(1, '#ca8a04');
+        } else if (ch.color === 'gold') {
+          bodyGrad.addColorStop(0, '#fffbeb');
+          bodyGrad.addColorStop(0.6, '#fde047');
+          bodyGrad.addColorStop(1, '#eab308');
+        } else if (ch.color === 'brown') {
+          bodyGrad.addColorStop(0, '#ffedd5');
+          bodyGrad.addColorStop(0.7, '#fed7aa');
+          bodyGrad.addColorStop(1, '#ea580c');
+        } else {
+          // Classic White Silky Hen
+          bodyGrad.addColorStop(0, '#ffffff');
+          bodyGrad.addColorStop(0.75, '#f8fafc');
+          bodyGrad.addColorStop(1, '#cbd5e1');
+        }
+
+        ctx.fillStyle = bodyGrad;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, r, r * 0.90, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
 
-        // Red Comb / Boss Crown on top
+        // Soft Belly Feather Texture
+        ctx.strokeStyle = ch.color === 'boss' ? '#ca8a04' : ch.color === 'gold' ? '#eab308' : '#e2e8f0';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(0, r * 0.28, r * 0.48, 0.2 * Math.PI, 0.8 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+
+        // 4. Bouncy Red Comb / Boss Royal Crown
         if (ch.color === 'boss') {
-          ctx.fillStyle = '#ef4444';
+          // Majestic Royal Golden Crown with Rubies
+          ctx.save();
+          ctx.translate(combSway, 0);
+          ctx.fillStyle = '#f59e0b';
+          ctx.strokeStyle = '#78350f';
+          ctx.lineWidth = 2.4;
           ctx.beginPath();
-          ctx.moveTo(-18, -r * 0.75);
-          ctx.lineTo(-12, -r * 1.2);
-          ctx.lineTo(0, -r * 0.9);
-          ctx.lineTo(12, -r * 1.2);
-          ctx.lineTo(18, -r * 0.75);
+          ctx.moveTo(-r * 0.65, -r * 0.72);
+          ctx.lineTo(-r * 0.52, -r * 1.35);
+          ctx.lineTo(-r * 0.20, -r * 0.95);
+          ctx.lineTo(0, -r * 1.45); // Tall center point
+          ctx.lineTo(r * 0.20, -r * 0.95);
+          ctx.lineTo(r * 0.52, -r * 1.35);
+          ctx.lineTo(r * 0.65, -r * 0.72);
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
-        } else {
+
+          // Crown Ruby Jewels
           ctx.fillStyle = '#ef4444';
+          [-r * 0.38, 0, r * 0.38].forEach((cx) => {
+            ctx.beginPath();
+            ctx.arc(cx, -r * 0.92, 3.2, 0, Math.PI * 2);
+            ctx.fill();
+          });
+          ctx.restore();
+        } else {
+          // Sweet 3-Lobed Bouncy Red Comb
+          ctx.save();
+          ctx.translate(combSway, 0);
+          ctx.fillStyle = '#ef4444';
+          ctx.strokeStyle = '#991b1b';
+          ctx.lineWidth = 2.2;
           ctx.beginPath();
-          ctx.arc(-6, -r * 0.88, r * 0.2, 0, Math.PI * 2);
-          ctx.arc(4, -r * 0.92, r * 0.22, 0, Math.PI * 2);
+          ctx.arc(-r * 0.28, -r * 0.85, r * 0.22, 0, Math.PI * 2);
+          ctx.arc(0, -r * 0.98, r * 0.26, 0, Math.PI * 2);
+          ctx.arc(r * 0.28, -r * 0.85, r * 0.22, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
+          ctx.restore();
         }
 
-        // Eyes
-        ctx.fillStyle = '#0f172a';
+        // 5. Adorable Expressive Eyes with Highlights (or Cute Blink Line)
+        if (isBlinking) {
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 2.5;
+          [-r * 0.32, r * 0.32].forEach((ex) => {
+            ctx.beginPath();
+            ctx.arc(ex, -r * 0.12, r * 0.12, 0.1 * Math.PI, 0.9 * Math.PI);
+            ctx.stroke();
+          });
+        } else {
+          [-r * 0.32, r * 0.32].forEach((ex) => {
+            // Dark eye base
+            ctx.fillStyle = '#0f172a';
+            ctx.beginPath();
+            ctx.arc(ex, -r * 0.14, r * 0.15, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Large anime sparkle reflection
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(ex - r * 0.04, -r * 0.18, r * 0.055, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Secondary small twinkle
+            ctx.beginPath();
+            ctx.arc(ex + r * 0.05, -r * 0.11, r * 0.03, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        }
+
+        // 6. Cute Rosy Cheeks
+        ctx.fillStyle = 'rgba(251, 113, 133, 0.65)';
         ctx.beginPath();
-        ctx.arc(-r * 0.32, -r * 0.15, r * 0.13, 0, Math.PI * 2);
-        ctx.arc(r * 0.32, -r * 0.15, r * 0.13, 0, Math.PI * 2);
+        ctx.arc(-r * 0.52, r * 0.08, r * 0.15, 0, Math.PI * 2);
+        ctx.arc(r * 0.52, r * 0.08, r * 0.15, 0, Math.PI * 2);
         ctx.fill();
 
-        // Rosy Cheeks
-        ctx.fillStyle = '#fda4af';
+        // 7. Sweet Red Wattle (دلاية الدجاجة الحمراء تحت المنقار)
+        ctx.fillStyle = '#ef4444';
+        ctx.strokeStyle = '#991b1b';
+        ctx.lineWidth = 1.6;
         ctx.beginPath();
-        ctx.arc(-r * 0.5, r * 0.08, r * 0.14, 0, Math.PI * 2);
-        ctx.arc(r * 0.5, r * 0.08, r * 0.14, 0, Math.PI * 2);
+        ctx.arc(-r * 0.07, r * 0.34, r * 0.11, 0, Math.PI * 2);
+        ctx.arc(r * 0.07, r * 0.34, r * 0.11, 0, Math.PI * 2);
         ctx.fill();
+        ctx.stroke();
 
-        // Orange Beak
-        ctx.fillStyle = '#f97316';
+        // 8. 3D Golden Beak with Nostril Details
+        ctx.fillStyle = '#f59e0b';
+        ctx.strokeStyle = '#b45309';
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.moveTo(-r * 0.18, 0);
-        ctx.lineTo(r * 0.18, 0);
-        ctx.lineTo(0, r * 0.32);
+        ctx.moveTo(-r * 0.19, -r * 0.02);
+        ctx.lineTo(r * 0.19, -r * 0.02);
+        ctx.lineTo(0, r * 0.34);
         ctx.closePath();
         ctx.fill();
+        ctx.stroke();
 
-        // Boss HP bar
+        // Beak center line
+        ctx.strokeStyle = '#92400e';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 0.02);
+        ctx.lineTo(0, r * 0.28);
+        ctx.stroke();
+
+        // 9. Boss HP Bar
         if (ch.maxHp > 1) {
-          const bw = r * 1.4;
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
-          ctx.fillRect(-bw / 2, r + 6, bw, 6);
+          const bw = r * 1.5;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+          ctx.fillRect(-bw / 2, r + 8, bw, 7);
           ctx.fillStyle = '#22c55e';
-          ctx.fillRect(-bw / 2, r + 6, bw * (ch.hp / ch.maxHp), 6);
+          ctx.fillRect(-bw / 2, r + 8, bw * (ch.hp / ch.maxHp), 7);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-bw / 2, r + 8, bw, 7);
         }
 
         ctx.restore();
@@ -808,13 +1005,23 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
           </div>
         </div>
 
-        {/* Progress Counter */}
-        <div className="flex items-center gap-3">
+        {/* Progress Counter & Equipped Weapon Badge */}
+        <div className="flex items-center gap-2.5">
+          {/* Equipped Weapon Badge */}
+          <div
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-300 text-xs font-black text-amber-950 shadow-2xs"
+            title={WEAPON_TIERS[weaponLevel]?.subtitleAr || ''}
+          >
+            <span>{WEAPON_TIERS[weaponLevel]?.icon || '🌽'}</span>
+            <span className="hidden md:inline">{WEAPON_TIERS[weaponLevel]?.nameAr || 'ذرة المزرعة'}</span>
+            <span className="md:hidden">سلاح م{weaponLevel}</span>
+          </div>
+
           <div className="text-right">
             <div className="text-xs font-bold text-slate-500">
-              الدجاج الذي تم صيده: <span className="text-slate-900 font-extrabold tabular-nums">{caughtCount} / {level.targetChickens}</span>
+              الدجاج المصيد: <span className="text-slate-900 font-extrabold tabular-nums">{caughtCount} / {level.targetChickens}</span>
             </div>
-            <div className="w-32 sm:w-40 h-2.5 bg-slate-100 rounded-full overflow-hidden mt-1 border border-slate-200">
+            <div className="w-28 sm:w-36 h-2.5 bg-slate-100 rounded-full overflow-hidden mt-1 border border-slate-200">
               <div
                 className="h-full bg-emerald-500 transition-all duration-200"
                 style={{ width: `${progressPercent}%` }}
@@ -967,9 +1174,12 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
             score={score}
             lives={lives}
             targetChickens={level.targetChickens}
+            ageGroup={settings.ageGroup}
             difficulty={settings.difficulty}
             subject={settings.subject}
             visualHelpers={settings.visualHelpers}
+            weaponLevel={weaponLevel}
+            onUpgradeWeapon={onUpgradeWeapon}
             onContinueToNextLevel={() => {
               onRequestUnlockNextLevel(nextLevelId);
               onPlayNextLevel(nextLevelId);
