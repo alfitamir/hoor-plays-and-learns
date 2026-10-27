@@ -35,10 +35,14 @@ import { AgeSelectionModal } from './components/AgeSelectionModal';
 import { ChickenGameCanvas } from './components/ChickenGameCanvas';
 import { UnifiedTopNavSettings } from './components/UnifiedTopNavSettings';
 import { OfflineStatusBanner } from './components/PWAInstallButton';
+import { ProgressBackup, type ProgressBackupDocument } from './components/ProgressBackup';
+import { ChildProfiles, type LocalChildProfile } from './components/ChildProfiles';
 
 const STORAGE_SETTINGS_KEY = 'hoor_game_settings_v2';
 const STORAGE_PROGRESS_KEY = 'hoor_game_progress_v2';
 const STORAGE_AGE_SELECTED_KEY = 'hoor_has_selected_age_v2';
+const STORAGE_PROFILES_KEY = 'hoor_child_profiles_v1';
+const STORAGE_ACTIVE_PROFILE_KEY = 'hoor_active_child_profile_v1';
 
 const DEFAULT_SETTINGS: GameSettings = {
   ageGroup: '6_to_9',
@@ -61,31 +65,93 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   quranVersesCompleted: 0,
 };
 
-export default function App() {
-  const [settings, setSettings] = useState<GameSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_SETTINGS_KEY);
-      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
-    } catch {
-      return DEFAULT_SETTINGS;
+function loadLegacySettings(): GameSettings {
+  try {
+    const saved = localStorage.getItem(STORAGE_SETTINGS_KEY);
+    const parsed = saved ? JSON.parse(saved) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? { ...DEFAULT_SETTINGS, ...parsed }
+      : DEFAULT_SETTINGS;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+function loadLegacyProgress(): PlayerProgress {
+  try {
+    const saved = localStorage.getItem(STORAGE_PROGRESS_KEY);
+    const parsed = saved ? JSON.parse(saved) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? { ...DEFAULT_PROGRESS, ...parsed }
+      : DEFAULT_PROGRESS;
+  } catch {
+    return DEFAULT_PROGRESS;
+  }
+}
+
+function loadChildProfiles(): LocalChildProfile[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_PROFILES_KEY);
+    const parsed: unknown = stored ? JSON.parse(stored) : null;
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter(
+        (profile): profile is LocalChildProfile =>
+          !!profile &&
+          typeof profile === 'object' &&
+          typeof profile.id === 'string' &&
+          typeof profile.name === 'string' &&
+          !!profile.settings && typeof profile.settings === 'object' &&
+          !!profile.progress && typeof profile.progress === 'object',
+      );
+      if (valid.length > 0) {
+        return valid.map((profile) => ({
+          ...profile,
+          settings: { ...DEFAULT_SETTINGS, ...profile.settings },
+          progress: { ...DEFAULT_PROGRESS, ...profile.progress },
+          ageSelected: profile.ageSelected === true,
+        }));
+      }
     }
+  } catch {
+    // Migrate from the legacy single-player keys below.
+  }
+
+  // First launch after upgrade: preserve the existing child's data as the initial profile.
+  return [{
+    id: 'child-default',
+    name: 'حور',
+    settings: loadLegacySettings(),
+    progress: loadLegacyProgress(),
+    ageSelected: (() => {
+      try { return localStorage.getItem(STORAGE_AGE_SELECTED_KEY) === 'true'; } catch { return false; }
+    })(),
+  }];
+}
+
+export default function App() {
+  const [profiles, setProfiles] = useState<LocalChildProfile[]>(loadChildProfiles);
+  const [activeProfileId, setActiveProfileId] = useState(() => {
+    try {
+      const savedId = localStorage.getItem(STORAGE_ACTIVE_PROFILE_KEY);
+      const availableProfiles = loadChildProfiles();
+      return availableProfiles.some((profile) => profile.id === savedId)
+        ? savedId!
+        : availableProfiles[0].id;
+    } catch {
+      return 'child-default';
+    }
+  });
+  const initialProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
+  const [settings, setSettings] = useState<GameSettings>(() => {
+    return initialProfile?.settings ?? loadLegacySettings();
   });
 
   const [progress, setProgress] = useState<PlayerProgress>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_PROGRESS_KEY);
-      return saved ? { ...DEFAULT_PROGRESS, ...JSON.parse(saved) } : DEFAULT_PROGRESS;
-    } catch {
-      return DEFAULT_PROGRESS;
-    }
+    return initialProfile?.progress ?? loadLegacyProgress();
   });
 
   const [showAgeModal, setShowAgeModal] = useState<boolean>(() => {
-    try {
-      return !localStorage.getItem(STORAGE_AGE_SELECTED_KEY);
-    } catch {
-      return false;
-    }
+    return !initialProfile?.ageSelected;
   });
 
   const [activeLevel, setActiveLevel] = useState<LevelConfig | null>(null);
@@ -104,7 +170,10 @@ export default function App() {
     } catch {
       // Ignore storage quota errors in private mode
     }
-  }, [settings]);
+    setProfiles((previous) => previous.map((profile) =>
+      profile.id === activeProfileId ? { ...profile, settings } : profile,
+    ));
+  }, [settings, activeProfileId]);
 
   useEffect(() => {
     try {
@@ -112,7 +181,108 @@ export default function App() {
     } catch {
       // Ignore storage quota errors
     }
-  }, [progress]);
+    setProfiles((previous) => previous.map((profile) =>
+      profile.id === activeProfileId ? { ...profile, progress } : profile,
+    ));
+  }, [progress, activeProfileId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_PROFILES_KEY, JSON.stringify(profiles));
+      localStorage.setItem(STORAGE_ACTIVE_PROFILE_KEY, activeProfileId);
+    } catch {
+      // Keep the active game's legacy local state usable when browser storage is full.
+    }
+  }, [profiles, activeProfileId]);
+
+  const handleImportBackup = (backup: ProgressBackupDocument) => {
+    let previousValues: [string | null, string | null, string | null] | null = null;
+    try {
+      previousValues = [
+        localStorage.getItem(STORAGE_SETTINGS_KEY),
+        localStorage.getItem(STORAGE_PROGRESS_KEY),
+        localStorage.getItem(STORAGE_AGE_SELECTED_KEY),
+      ];
+      localStorage.setItem(STORAGE_SETTINGS_KEY, JSON.stringify(backup.settings));
+      localStorage.setItem(STORAGE_PROGRESS_KEY, JSON.stringify(backup.progress));
+      if (backup.ageSelected) {
+        localStorage.setItem(STORAGE_AGE_SELECTED_KEY, 'true');
+      } else {
+        localStorage.removeItem(STORAGE_AGE_SELECTED_KEY);
+      }
+    } catch {
+      if (previousValues) {
+        const keys = [STORAGE_SETTINGS_KEY, STORAGE_PROGRESS_KEY, STORAGE_AGE_SELECTED_KEY];
+        keys.forEach((key, index) => {
+          try {
+            const previousValue = previousValues?.[index] ?? null;
+            if (previousValue === null) localStorage.removeItem(key);
+            else localStorage.setItem(key, previousValue);
+          } catch {
+            // Best-effort rollback if storage itself is unavailable.
+          }
+        });
+      }
+      throw new Error('تعذّر حفظ النسخة في التخزين المحلي؛ لم تُطبّق البيانات على اللعبة.');
+    }
+
+    setSettings(backup.settings);
+    setProgress(backup.progress);
+    setShowAgeModal(!backup.ageSelected);
+    setActiveLevel(null);
+    setProfiles((previous) => previous.map((profile) =>
+      profile.id === activeProfileId
+        ? { ...profile, settings: backup.settings, progress: backup.progress, ageSelected: backup.ageSelected }
+        : profile,
+    ));
+  };
+
+  const handleSelectProfile = (profileId: string) => {
+    const profile = profiles.find((item) => item.id === profileId);
+    if (!profile || profileId === activeProfileId) return;
+    setActiveProfileId(profileId);
+    setSettings(profile.settings);
+    setProgress(profile.progress);
+    setShowAgeModal(!profile.ageSelected);
+    setActiveLevel(null);
+    setSelectedBiomeFilter('all');
+  };
+
+  const handleAddProfile = (name: string) => {
+    const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `child-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const profile: LocalChildProfile = {
+      id,
+      name,
+      settings: { ...DEFAULT_SETTINGS },
+      progress: { ...DEFAULT_PROGRESS, unlockedLevels: [1], levelStars: {}, levelHighScores: {} },
+      ageSelected: false,
+    };
+    setProfiles((previous) => [...previous, profile]);
+    setActiveProfileId(profile.id);
+    setSettings(profile.settings);
+    setProgress(profile.progress);
+    setShowAgeModal(true);
+    setActiveLevel(null);
+    setSelectedBiomeFilter('all');
+  };
+
+  const handleDeleteProfile = (profileId: string) => {
+    if (profiles.length < 2) return;
+    const remaining = profiles.filter((profile) => profile.id !== profileId);
+    if (remaining.length === profiles.length) return;
+    setProfiles(remaining);
+    if (profileId === activeProfileId) {
+      const nextProfile = remaining[0];
+      setActiveProfileId(nextProfile.id);
+      setSettings(nextProfile.settings);
+      setProgress(nextProfile.progress);
+      setShowAgeModal(!nextProfile.ageSelected);
+      setActiveLevel(null);
+      setSelectedBiomeFilter('all');
+    }
+  };
 
   const handleSelectStage = (lvl: LevelConfig) => {
     soundFX.playWoodTap();
@@ -754,6 +924,9 @@ export default function App() {
             } catch {
               // ignore quota
             }
+            setProfiles((previous) => previous.map((profile) =>
+              profile.id === activeProfileId ? { ...profile, ageSelected: true } : profile,
+            ));
             setShowAgeModal(false);
           }}
           onClose={() => setShowAgeModal(false)}
@@ -762,25 +935,40 @@ export default function App() {
 
       {/* Parent & Child Difficulty Customization Modal */}
       {showSettings && (
-        <SettingsModal
-          settings={settings}
-          onUpdateSettings={setSettings}
-          onUnlockAllLevels={() =>
-            setProgress((prev) => ({
-              ...prev,
-              unlockedLevels: currentLevels.map((l) => l.id),
-            }))
-          }
-          onResetProgress={() => {
-            setProgress(DEFAULT_PROGRESS);
-            setActiveLevel(null);
-          }}
-          onClose={() => setShowSettings(false)}
-        />
+        <>
+          <SettingsModal
+            settings={settings}
+            onUpdateSettings={setSettings}
+            onUnlockAllLevels={() =>
+              setProgress((prev) => ({
+                ...prev,
+                unlockedLevels: currentLevels.map((l) => l.id),
+              }))
+            }
+            onResetProgress={() => {
+              setProgress(DEFAULT_PROGRESS);
+              setActiveLevel(null);
+            }}
+            onClose={() => setShowSettings(false)}
+          />
+          <ProgressBackup
+            progress={progress}
+            settings={settings}
+            ageSelected={!showAgeModal}
+            onImport={handleImportBackup}
+          />
+        </>
       )}
 
       {/* Non-intrusive Offline Mode Indicator */}
       <OfflineStatusBanner />
+      <ChildProfiles
+        profiles={profiles}
+        activeProfileId={activeProfileId}
+        onSelect={handleSelectProfile}
+        onAdd={handleAddProfile}
+        onDelete={handleDeleteProfile}
+      />
     </div>
   );
 }

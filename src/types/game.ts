@@ -1,5 +1,6 @@
 export const HOOR_PHOTO_URL = '/assets/aistudio/10160185010238213_11fa6234.jpg';
-export const APP_VERSION = '2.2.0-OTA';
+declare const __APP_VERSION__: string;
+export const APP_VERSION = __APP_VERSION__;
 
 export type AgeGroupId = 'under_5' | '6_to_9' | '10_plus';
 

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
+const packageJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf-8'));
 
 const INCLUDED_PATHS = [
   '.gitignore',
@@ -79,7 +80,7 @@ for (const relPath of allFiles) {
 
 const outputManifest = {
   generatedAt: new Date().toISOString(),
-  version: '2.4.0',
+  version: packageJson.version,
   totalFiles: manifestFiles.length,
   files: manifestFiles,
 };

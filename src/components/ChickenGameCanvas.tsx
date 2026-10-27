@@ -81,6 +81,17 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hoorImgRef = useRef<HTMLImageElement | null>(null);
+  const reduceMotionRef = useRef(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updatePreference = () => {
+      reduceMotionRef.current = mediaQuery.matches;
+    };
+    updatePreference();
+    mediaQuery.addEventListener('change', updatePreference);
+    return () => mediaQuery.removeEventListener('change', updatePreference);
+  }, []);
 
   useEffect(() => {
     const img = new Image();
@@ -355,6 +366,7 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
     let animationFrameId: number;
 
     const createBurst = (x: number, y: number, color: string, count = 10) => {
+      if (reduceMotionRef.current) return;
       const w = worldRef.current;
       for (let i = 0; i < count; i++) {
         const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
@@ -674,15 +686,15 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
         ctx.translate(ch.x, ch.y);
 
         const r = ch.radius;
-        const wingFlap = Math.sin(ch.wingPhase);
+        const wingFlap = reduceMotionRef.current ? 0 : Math.sin(ch.wingPhase);
         const wingFlapY = wingFlap * (r * 0.42);
-        const combSway = Math.sin(ch.wingPhase * 0.8) * (r * 0.08);
+        const combSway = reduceMotionRef.current ? 0 : Math.sin(ch.wingPhase * 0.8) * (r * 0.08);
 
         // Blinking calculation (brief blink every ~180 frames)
-        const isBlinking = (w.frameCount + ch.id * 37) % 190 < 6;
+        const isBlinking = !reduceMotionRef.current && (w.frameCount + ch.id * 37) % 190 < 6;
 
         // 1. Cute Little Feet (wiggle gently with flight)
-        const footWiggle = Math.sin(ch.wingPhase * 1.2) * 2;
+        const footWiggle = reduceMotionRef.current ? 0 : Math.sin(ch.wingPhase * 1.2) * 2;
         ctx.fillStyle = '#f97316';
         ctx.strokeStyle = '#c2410c';
         ctx.lineWidth = 1.8;
@@ -947,8 +959,8 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
       }
       ctx.restore();
 
-      // Draw Particles
-      for (const p of w.particles) {
+      // Draw decorative particles only when the user has not requested reduced motion.
+      for (const p of reduceMotionRef.current ? [] : w.particles) {
         ctx.save();
         ctx.globalAlpha = Math.max(0, p.alpha);
         ctx.fillStyle = p.color;
@@ -973,6 +985,53 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
     onChangeLives,
     onLevelComplete,
   ]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const excludedSelector = 'input, textarea, select, button, [role="dialog"], [aria-modal="true"], [contenteditable="true"]';
+      if (
+        target.closest(excludedSelector) ||
+        document.activeElement instanceof HTMLElement &&
+          document.activeElement.closest(excludedSelector)
+      ) {
+        return;
+      }
+
+      const canvasElement = canvasRef.current;
+      if (!canvasElement || document.activeElement !== canvasElement) return;
+
+      if (event.key === 'Escape') {
+        if (stageState === 'playing') {
+          event.preventDefault();
+          setIsPaused((paused) => !paused);
+        }
+        return;
+      }
+
+      if (stageState !== 'playing' || isPaused) return;
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        // Arrows follow the visible canvas direction (not the RTL text flow).
+        const step = event.key === 'ArrowRight' ? 42 : -42;
+        worldRef.current.targetPlayerX = Math.max(
+          40,
+          Math.min(canvasElement.width - 40, worldRef.current.targetPlayerX + step)
+        );
+      } else if (event.code === 'Space' || event.key === ' ') {
+        event.preventDefault();
+        if (!event.repeat) fireCorn();
+      }
+    };
+
+    canvas.addEventListener('keydown', handleKeyDown);
+    return () => canvas.removeEventListener('keydown', handleKeyDown);
+  }, [fireCorn, isPaused, stageState]);
 
   const progressPercent = Math.min(100, Math.round((caughtCount / level.targetChickens) * 100));
   const nextLevelId = level.id < 20 ? level.id + 1 : null;
@@ -1080,19 +1139,25 @@ export const ChickenGameCanvas: React.FC<ChickenGameCanvasProps> = ({
           ref={canvasRef}
           width={760}
           height={480}
+          role="application"
+          aria-label="لعبة حور: حرّكي سلة حور وأطلقي الذرة"
+          aria-describedby="chicken-game-keyboard-help"
+          aria-keyshortcuts="ArrowLeft ArrowRight Space Escape"
+          tabIndex={0}
           onPointerDown={(e) => handlePointerDownOrMove(e, true)}
           onPointerMove={(e) => {
             if (e.buttons > 0 || e.pointerType === 'touch' || e.pointerType === 'mouse') {
               handlePointerDownOrMove(e, false);
             }
           }}
-          className="w-full h-[62vh] min-h-[360px] max-h-[540px] block touch-none cursor-crosshair"
+          className="w-full h-[62vh] min-h-[360px] max-h-[540px] block touch-none cursor-crosshair focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[-4px] focus-visible:outline-sky-700"
         />
 
         {/* Instruction Strip at Bottom of Canvas */}
         <div className="bg-white/95 border-t border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-bold text-slate-600">
-          <span>
+          <span id="chicken-game-keyboard-help">
             💡 المسِي الدجاجة مباشرةً أو حرّكي سلة «حور» يميناً ويساراً وتفادي البيض المتساقط!
+            {' '}لوحة المفاتيح: ← / → للتحريك، Space للإطلاق، Escape للإيقاف أو المتابعة.
           </span>
           <span className="font-extrabold text-sky-800 tabular-nums">
             النقاط: {score}

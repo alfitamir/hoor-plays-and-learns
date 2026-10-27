@@ -3,6 +3,10 @@ set -e
 
 echo "=== 1. Starting APK Build Process ==="
 BUILD_DIR="/tmp/apk_build"
+ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+PUBLIC_DIR="$ROOT_DIR/public"
+DIST_DIR="$ROOT_DIR/dist"
+APP_VERSION="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).version)' "$ROOT_DIR/package.json")"
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/src/app/aistudio/hoor_plays_learns"
 mkdir -p "$BUILD_DIR/res/values"
@@ -11,8 +15,8 @@ mkdir -p "$BUILD_DIR/assets"
 mkdir -p "$BUILD_DIR/bin"
 
 # 2. Extract icons and strings from existing zip if available
-if [ -f "/app/applet/public/Hoor-Android-APK-Project.zip" ]; then
-  unzip -q -o /app/applet/public/Hoor-Android-APK-Project.zip res/* -d "$BUILD_DIR/" || true
+if [ -f "$PUBLIC_DIR/Hoor-Android-APK-Project.zip" ]; then
+  unzip -q -o "$PUBLIC_DIR/Hoor-Android-APK-Project.zip" 'res/*' -d "$BUILD_DIR/" || true
 fi
 
 # Ensure strings.xml exists
@@ -29,7 +33,7 @@ cat << 'EOF' > "$BUILD_DIR/AndroidManifest.xml"
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="app.aistudio.hoor_plays_learns"
     android:versionCode="3"
-    android:versionName="2.2.0">
+    android:versionName="@APP_VERSION@">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="33" />
 
@@ -77,7 +81,7 @@ import java.io.ByteArrayOutputStream;
 
 public class MainActivity extends Activity {
     private WebView webView;
-    private static final String APP_VERSION = "2.2.0";
+    private static final String APP_VERSION = "@APP_VERSION@";
 
     public class AndroidBridge {
         @JavascriptInterface
@@ -155,14 +159,18 @@ public class MainActivity extends Activity {
 }
 EOF
 
+sed -i "s/@APP_VERSION@/${APP_VERSION}/g" \
+  "$BUILD_DIR/AndroidManifest.xml" \
+  "$BUILD_DIR/src/app/aistudio/hoor_plays_learns/MainActivity.java"
+
 # 3. Copy latest standalone HTML to assets/index.html
 echo "=== 2. Copying latest bundle to assets ==="
-cp /app/applet/public/Hoor-Plays-Learns-Android.html "$BUILD_DIR/assets/index.html"
+cp "$PUBLIC_DIR/Hoor-Plays-Learns-Android.html" "$BUILD_DIR/assets/index.html"
 
 # If icon doesn't exist, create one
 if [ ! -f "$BUILD_DIR/res/mipmap-hdpi/ic_launcher.png" ]; then
   mkdir -p "$BUILD_DIR/res/mipmap-hdpi"
-  cp /app/applet/public/pwa-192x192.png "$BUILD_DIR/res/mipmap-hdpi/ic_launcher.png"
+  cp "$PUBLIC_DIR/pwa-192x192.png" "$BUILD_DIR/res/mipmap-hdpi/ic_launcher.png"
 fi
 
 ANDROID_JAR="/usr/lib/android-sdk/platforms/android-23/android.jar"
@@ -210,14 +218,14 @@ apksigner verify --verbose "$BUILD_DIR/bin/Hoor-Plays-Learns.apk"
 
 # 13. Copy final APK to public and dist
 echo "=== 12. Publishing final APK ==="
-cp "$BUILD_DIR/bin/Hoor-Plays-Learns.apk" /app/applet/public/Hoor-Plays-Learns.apk
-mkdir -p /app/applet/dist
-cp "$BUILD_DIR/bin/Hoor-Plays-Learns.apk" /app/applet/dist/Hoor-Plays-Learns.apk
+cp "$BUILD_DIR/bin/Hoor-Plays-Learns.apk" "$PUBLIC_DIR/Hoor-Plays-Learns.apk"
+mkdir -p "$DIST_DIR"
+cp "$BUILD_DIR/bin/Hoor-Plays-Learns.apk" "$DIST_DIR/Hoor-Plays-Learns.apk"
 
 # 14. Package updated project into ZIP
 echo "=== 13. Packaging project ZIP ==="
-(cd "$BUILD_DIR" && zip -r /app/applet/public/Hoor-Android-APK-Project.zip AndroidManifest.xml src res assets bin/app bin/classes.dex)
-cp /app/applet/public/Hoor-Android-APK-Project.zip /app/applet/dist/Hoor-Android-APK-Project.zip
+(cd "$BUILD_DIR" && zip -r "$PUBLIC_DIR/Hoor-Android-APK-Project.zip" AndroidManifest.xml src res assets bin/app bin/classes.dex)
+cp "$PUBLIC_DIR/Hoor-Android-APK-Project.zip" "$DIST_DIR/Hoor-Android-APK-Project.zip"
 
 echo "=== ✅ All APK Build & Packaging Steps Completed Successfully! ==="
-ls -lh /app/applet/public/Hoor-Plays-Learns.apk /app/applet/public/Hoor-Android-APK-Project.zip
+ls -lh "$PUBLIC_DIR/Hoor-Plays-Learns.apk" "$PUBLIC_DIR/Hoor-Android-APK-Project.zip"

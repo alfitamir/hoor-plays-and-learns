@@ -517,6 +517,34 @@ function generate6to9SubtractionQuestion(difficulty: DifficultyLevel): Education
   };
 }
 
+function generate6to9MultiplicationQuestion(difficulty: DifficultyLevel): EducationalQuestion {
+  let a: number;
+  let b: number;
+  if (difficulty === 'easy') {
+    a = randomInt(2, 5);
+    b = randomInt(2, 5);
+  } else if (difficulty === 'medium') {
+    a = randomInt(2, 9);
+    b = randomInt(2, 9);
+  } else {
+    a = randomInt(3, 12);
+    b = randomInt(3, 12);
+  }
+  const answer = a * b;
+  return {
+    id: `mult-${Date.now()}-${Math.random()}`,
+    type: 'multiplication',
+    ageGroup: '6_to_9',
+    titleAr: 'تحدي الضرب المناسب للأبطال ✖️',
+    promptAr: `ما ناتج ضرب ${a} في ${b}؟`,
+    equationDisplay: `${a} × ${b} = ؟`,
+    visualEmoji: '✖️',
+    options: generateNumericOptions(answer, 4, 1, answer + 25),
+    correctValue: answer,
+    hintAr: `احسبي ${a} × ${b}، ويمكنكِ جمع ${a} ${b} مرات!`,
+  };
+}
+
 // ========================================================
 // 3. 10 YEARS AND OLDER GENERATORS (رواد التحدي والعباقرة 🚀🧠 - مستويات صعبة)
 // ========================================================
@@ -753,14 +781,14 @@ function generate10PlusEquationQuestion(): EducationalQuestion {
 // ========================================================
 // 4. GENERAL KNOWLEDGE QUESTIONS (عواصم، جغرافيا، تاريخ وعلوم)
 // ========================================================
-function generateGeneralKnowledgeQuestion(): EducationalQuestion {
+function generateGeneralKnowledgeQuestion(ageGroup: AgeGroupId = '10_plus'): EducationalQuestion {
   const item = GENERAL_KNOWLEDGE_DATA[randomInt(0, GENERAL_KNOWLEDGE_DATA.length - 1)];
   const allChoices = shuffleArray([item.correct, ...item.distractors.slice(0, 3)]);
 
   return {
     id: `gk-${Date.now()}-${Math.random()}`,
     type: 'general_knowledge',
-    ageGroup: '10_plus',
+    ageGroup,
     titleAr: 'ثقافة ومعلومات عامة وعواصم 🌍',
     promptAr: item.prompt,
     visualEmoji: item.emoji,
@@ -843,6 +871,36 @@ function generateEnglishQuestion(ageGroup: AgeGroupId): EducationalQuestion {
   };
 }
 
+function generate10PlusBasicMathQuestion(
+  operation: 'addition' | 'subtraction',
+  difficulty: DifficultyLevel,
+): EducationalQuestion {
+  const max = difficulty === 'easy' ? 50 : difficulty === 'medium' ? 200 : 1000;
+  const first = randomInt(difficulty === 'easy' ? 5 : 20, max);
+  const second = randomInt(2, operation === 'addition' ? max : first);
+  const answer = operation === 'addition' ? first + second : first - second;
+  const equationDisplay = operation === 'addition'
+    ? `${first} + ${second} = ؟`
+    : `${first} - ${second} = ؟`;
+
+  return {
+    id: `10plus-${operation}-${Date.now()}-${Math.random()}`,
+    type: operation,
+    ageGroup: '10_plus',
+    titleAr: operation === 'addition' ? 'تحدي الجمع المتقدم ➕' : 'تحدي الطرح المتقدم ➖',
+    promptAr: operation === 'addition'
+      ? `ما مجموع ${first} و${second}؟`
+      : `إذا طرحنا ${second} من ${first}، فما الناتج؟`,
+    equationDisplay,
+    visualEmoji: operation === 'addition' ? '➕' : '➖',
+    options: generateNumericOptions(answer, 4, 0, max * 2),
+    correctValue: answer,
+    hintAr: operation === 'addition'
+      ? `اجمعي ${first} و${second} للوصول إلى الناتج.`
+      : `اطرحي ${second} من ${first}، وتأكدي أن الناتج غير سالب.`,
+  };
+}
+
 // ========================================================
 // 6. MASTER QUESTION GENERATOR ROUTER
 // ========================================================
@@ -860,6 +918,31 @@ export function generateQuestion(
     if (subject === 'addition' || subject === 'math') {
       return Math.random() > 0.4 ? generateUnder5AdditionQuestion() : generateUnder5CountingQuestion();
     }
+    if (subject === 'multiplication' || subject === 'advanced_math') {
+      const question = generateUnder5AdditionQuestion();
+      const requestedSubject = subject === 'multiplication' ? 'الضرب' : 'الرياضيات المتقدمة';
+      return {
+        ...question,
+        titleAr: `اختيارك: ${requestedSubject} — ${question.titleAr}`,
+        hintAr: `الضرب والرياضيات المتقدمة غير مناسبين لهذا العمر؛ حُوّل الاختيار بوضوح إلى جمع مبسط. ${question.hintAr}`,
+      };
+    }
+    if (subject === 'general_knowledge') {
+      const question = generateUnder5ShapeQuestion();
+      return {
+        ...question,
+        titleAr: `اختيارك: المعلومات العامة — ${question.titleAr}`,
+        hintAr: `المعلومات العامة غير مناسبة لهذا العمر؛ حُوّل الاختيار بوضوح إلى تعلّم الأشكال. ${question.hintAr}`,
+      };
+    }
+    if (subject === 'subtraction') {
+      const question = generateUnder5CountingQuestion();
+      return {
+        ...question,
+        titleAr: `اختيارك: الطرح — ${question.titleAr}`,
+        hintAr: `الطرح غير مناسب لهذا العمر؛ حُوّل الاختيار بوضوح إلى تعلّم العدّ. ${question.hintAr}`,
+      };
+    }
     // Default mix for toddlers: Counting, Shapes, Simple addition, Early English
     const roll = Math.random();
     if (roll < 0.35) return generateUnder5CountingQuestion();
@@ -872,6 +955,13 @@ export function generateQuestion(
   if (ageGroup === '10_plus') {
     if (subject === 'general_knowledge') {
       return generateGeneralKnowledgeQuestion();
+    }
+    if (subject === 'addition' || subject === 'subtraction') {
+      return generate10PlusBasicMathQuestion(subject, difficulty);
+    }
+    if (subject === 'math') {
+      const operation = Math.random() < 0.5 ? 'addition' : 'subtraction';
+      return generate10PlusBasicMathQuestion(operation, difficulty);
     }
     if (subject === 'english') {
       return generateEnglishQuestion('10_plus');
@@ -912,6 +1002,20 @@ export function generateQuestion(
   // ROUTE 3: 6 TO 9 YEARS OLD (Default Hoor Tier)
   if (subject === 'english') {
     return generateEnglishQuestion('6_to_9');
+  }
+  if (subject === 'multiplication') {
+    return generate6to9MultiplicationQuestion(difficulty);
+  }
+  if (subject === 'advanced_math') {
+    const question = generate6to9MultiplicationQuestion(difficulty);
+    return {
+      ...question,
+      titleAr: `الرياضيات المتقدمة — مستوى مبسط — ${question.titleAr}`,
+      hintAr: `بُسّط اختيار الرياضيات المتقدمة إلى الضرب المناسب لعمر ٦–٩ سنوات. ${question.hintAr}`,
+    };
+  }
+  if (subject === 'general_knowledge') {
+    return generateGeneralKnowledgeQuestion('6_to_9');
   }
   if (subject === 'addition') {
     return generate6to9AdditionQuestion(difficulty);

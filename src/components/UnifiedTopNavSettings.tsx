@@ -31,11 +31,6 @@ import {
 } from '../hooks/usePWAInstall';
 import { APP_VERSION, HOOR_PHOTO_URL, GameSettings, AGE_GROUPS, AgeGroupId } from '../types/game';
 import { soundFX } from '../utils/soundEffects';
-import {
-  syncRepositoryToGitHub,
-  GitHubSyncProgress,
-  GitHubSyncResult,
-} from '../utils/githubSync';
 
 interface UnifiedTopNavSettingsProps {
   settings: GameSettings;
@@ -52,7 +47,7 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeModal, setActiveModal] = useState<
-    'none' | 'apk_details' | 'github_sync' | 'qr_code' | 'diagnostics'
+    'none' | 'apk_details' | 'github_instructions' | 'qr_code' | 'diagnostics'
   >('none');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -68,14 +63,6 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
   const [diagnostics, setDiagnostics] = useState<DiagnosticCheckResult[]>([]);
   const [runningDiag, setRunningDiag] = useState(false);
 
-  // GitHub Sync State
-  const [ghRepoName, setGhRepoName] = useState('hoor-plays-and-learns');
-  const [ghToken, setGhToken] = useState('');
-  const [ghPrivate, setGhPrivate] = useState(false);
-  const [ghSyncing, setGhSyncing] = useState(false);
-  const [ghProgress, setGhProgress] = useState<GitHubSyncProgress | null>(null);
-  const [ghResult, setGhResult] = useState<GitHubSyncResult | null>(null);
-
   const getFullUrl = (path: string) => {
     if (typeof window !== 'undefined') {
       return `${window.location.origin}${path}`;
@@ -85,7 +72,6 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
 
   const apkUrl = getFullUrl('/Hoor-Plays-Learns.apk');
   const htmlUrl = getFullUrl('/Hoor-Plays-Learns-Android.html');
-  const zipUrl = getFullUrl('/Hoor-GitHub-Full-Repo.zip');
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -176,26 +162,6 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
     setRunningDiag(false);
   };
 
-  const handleGitHubSync = async (e: React.FormEvent) => {
-    e.preventDefault();
-    soundFX.playWoodTap();
-    setGhSyncing(true);
-    setGhResult(null);
-    setGhProgress({ step: 'بدء الاتصال بـ GitHub...', percent: 5 });
-
-    const res = await syncRepositoryToGitHub(ghToken, ghRepoName, ghPrivate, (prog) => {
-      setGhProgress(prog);
-    });
-
-    setGhSyncing(false);
-    setGhResult(res);
-    if (res.success) {
-      soundFX.playSuccessBirdChirp();
-      setNotificationMsg(`🎉 تمت مزامنة الكود الكامل (${res.filesCount} ملف) إلى GitHub بنجاح!`);
-    } else {
-      soundFX.playWoodTap(true);
-    }
-  };
 
   return (
     <div className="relative" ref={dropdownRef} dir="rtl">
@@ -211,8 +177,8 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
             ? 'bg-emerald-600 border-emerald-700 text-white ring-2 ring-emerald-400'
             : 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800'
         }`}
-        title="قائمة الإعدادات والتحميل والمزامنة"
-        aria-label="قائمة الإعدادات والتحميل والمزامنة"
+        title="قائمة الإعدادات والتحميل وإدارة المشروع"
+        aria-label="قائمة الإعدادات والتحميل وإدارة المشروع"
       >
         <Settings
           className={`w-5 h-5 text-emerald-600 transition-transform duration-300 ${
@@ -328,10 +294,10 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
             </button>
           </div>
 
-          {/* Section 2: GitHub Synchronization */}
+          {/* Section 2: GitHub Repository Instructions */}
           <div className="space-y-1 pt-1 border-t border-slate-100">
             <div className="text-[11px] font-black text-slate-400 px-3 pt-1">
-              مزامنة الكود الكامل على GitHub:
+              إدارة نسخة المشروع على GitHub:
             </div>
 
             <button
@@ -339,7 +305,7 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
               onClick={() => {
                 setIsOpen(false);
                 soundFX.playWoodTap();
-                setActiveModal('github_sync');
+                setActiveModal('github_instructions');
               }}
               className="w-full flex items-center justify-between p-2.5 rounded-xl hover:bg-indigo-50 transition-colors text-right cursor-pointer group"
             >
@@ -349,15 +315,15 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-black text-slate-900 group-hover:text-indigo-700">
-                    مزامنة الكود على GitHub
+                    إرشادات إدارة المشروع
                   </div>
                   <div className="text-[10px] font-bold text-slate-500">
-                    رفع الكود + GitHub Actions للبناء التلقائي
+                    إدارة المستودع بأمان عبر GitHub أو CLI
                   </div>
                 </div>
               </div>
               <span className="text-[10px] font-black text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md">
-                Git Sync
+                GitHub
               </span>
             </button>
 
@@ -553,153 +519,58 @@ export const UnifiedTopNavSettings: React.FC<UnifiedTopNavSettingsProps> = ({
         </div>
       )}
 
-      {/* GitHub Sync Modal */}
-      {activeModal === 'github_sync' && (
+      {/* GitHub Repository Instructions Modal */}
+      {activeModal === 'github_instructions' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 backdrop-blur-xs p-4 overflow-y-auto">
           <div className="w-full max-w-xl rounded-3xl bg-slate-900 text-white p-6 shadow-2xl border-2 border-slate-700 my-auto space-y-4 text-right">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <FolderGit2 className="w-6 h-6 text-emerald-400" />
                 <h3 className="text-base sm:text-lg font-black text-white">
-                  مزامنة الكود الكامل على GitHub
+                  إدارة مستودع المشروع على GitHub
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setActiveModal('none')}
                 className="p-1.5 rounded-xl text-slate-400 hover:text-white cursor-pointer"
+                aria-label="إغلاق"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs font-bold text-slate-300 leading-relaxed">
-              ارفع مشروع اللعبة بالكامل (فرع <code className="text-emerald-300">main</code>) إلى حسابك في GitHub، مع ملف البناء التلقائي <code className="text-sky-300">.github/workflows/build-and-deploy.yml</code> لإنتاج الـ APK تلقائياً.
-            </p>
+            <div className="space-y-3 text-xs font-bold text-slate-300 leading-relaxed">
+              <p>
+                هذا التطبيق PWA ثابت ويعمل دون اتصال، ولا يملك خادماً أو تسجيل دخول OAuth؛ لذلك لا يرفع الملفات ولا يطلب أو يقرأ أو يرسل رموز GitHub.
+              </p>
+              <ol className="list-decimal list-inside space-y-2 rounded-2xl bg-slate-800/90 border border-slate-700 p-4">
+                <li>نزّل ملف المستودع ZIP من قائمة التحميل.</li>
+                <li>أنشئ أو افتح مستودعك من موقع GitHub، ثم ارفع الملفات من واجهة GitHub أو استخدم Git/GitHub CLI على جهازك.</li>
+                <li>سجّل الدخول إلى GitHub حصراً عبر موقعه أو أدواته الرسمية، ولا تلصق أي رمز وصول في هذه اللعبة أو في أي حقل داخلها.</li>
+              </ol>
+            </div>
 
-            <form onSubmit={handleGitHubSync} className="space-y-3 bg-slate-800/90 p-4 rounded-2xl border border-slate-700">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-black text-slate-200">
-                  رمز الوصول الشخصي (Personal Access Token):
-                </label>
-                <a
-                  href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Hoor-Plays-Learns-Sync"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-[11px] font-black text-sky-300 hover:underline flex items-center gap-1"
-                >
-                  <span>استخراج الرمز بنقرة واحدة</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-
-              <input
-                type="password"
-                value={ghToken}
-                onChange={(e) => setGhToken(e.target.value)}
-                placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                dir="ltr"
-                className="w-full rounded-xl bg-slate-900 border border-slate-600 px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-emerald-400"
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                    اسم المستودع:
-                  </label>
-                  <input
-                    type="text"
-                    value={ghRepoName}
-                    onChange={(e) => setGhRepoName(e.target.value)}
-                    dir="ltr"
-                    className="w-full rounded-xl bg-slate-900 border border-slate-600 px-3 py-2 text-xs font-mono text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                    الخصوصية:
-                  </label>
-                  <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-600">
-                    <button
-                      type="button"
-                      onClick={() => setGhPrivate(false)}
-                      className={`flex-1 py-1 rounded-lg text-xs font-bold ${
-                        !ghPrivate ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'
-                      }`}
-                    >
-                      عام (Public)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGhPrivate(true)}
-                      className={`flex-1 py-1 rounded-lg text-xs font-bold ${
-                        ghPrivate ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'
-                      }`}
-                    >
-                      خاص (Private)
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {ghSyncing && ghProgress && (
-                <div className="space-y-1 bg-slate-900 p-3 rounded-xl border border-slate-700">
-                  <div className="flex justify-between text-xs font-bold text-emerald-300">
-                    <span>{ghProgress.step}</span>
-                    <span>{ghProgress.percent}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-slate-700 overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-400 transition-all duration-200"
-                      style={{ width: `${ghProgress.percent}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {ghResult && (
-                <div
-                  className={`p-3 rounded-xl text-xs font-bold border ${
-                    ghResult.success
-                      ? 'bg-emerald-950 border-emerald-500 text-emerald-200'
-                      : 'bg-rose-950 border-rose-500 text-rose-200'
-                  }`}
-                >
-                  {ghResult.success ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5 font-black text-emerald-300">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span>تمت المزامنة بنجاح! ({ghResult.filesCount} ملف)</span>
-                      </div>
-                      <a
-                        href={ghResult.repoUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-black hover:bg-emerald-400"
-                      >
-                        <span>فتح مستودع GitHub</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                  ) : (
-                    <div>⚠️ {ghResult.error}</div>
-                  )}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={ghSyncing}
-                className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer"
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="https://github.com/alfitamir/hoor-plays-and-learns"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black hover:bg-emerald-400"
               >
-                {ghSyncing ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <FolderGit2 className="w-4 h-4" />
-                )}
-                <span>مزامنة الكود الكامل إلى GitHub الآن</span>
-              </button>
-            </form>
+                <span>فتح مستودع المشروع</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <a
+                href="https://github.com/new"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-700 text-white font-black hover:bg-slate-600"
+              >
+                <span>إنشاء مستودع على GitHub</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
         </div>
       )}

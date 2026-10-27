@@ -19,8 +19,8 @@
     "path": "./android.keystore",
     "alias": "hoor-key"
   },
-  "appVersionName": "2.0.0-OTA",
-  "appVersionCode": 2,
+  "appVersionName": "2.4.0",
+  "appVersionCode": 3,
   "shortcuts": [],
   "generatorApp": "bubblewrap-cli",
   "webManifestUrl": "https://ais-pre-lfwx2oz5yaqjev6jjcfb4o-708730730945.europe-west1.run.app/manifest.webmanifest",

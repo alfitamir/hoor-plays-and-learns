@@ -20,6 +20,71 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [confirmReset, setConfirmReset] = React.useState(false);
   const [unlockedToast, setUnlockedToast] = React.useState(false);
+  const [parentChallenge, setParentChallenge] = React.useState<{
+    action: 'unlock' | 'reset';
+    first: number;
+    second: number;
+  } | null>(null);
+  const [parentAnswer, setParentAnswer] = React.useState('');
+  const [parentError, setParentError] = React.useState(false);
+  const parentActionHandled = React.useRef(false);
+  const parentAnswerInput = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (parentChallenge) parentAnswerInput.current?.focus();
+  }, [parentChallenge]);
+
+  const requestParentCheck = (action: 'unlock' | 'reset') => {
+    parentActionHandled.current = false;
+    setParentAnswer('');
+    setParentError(false);
+    setParentChallenge({
+      action,
+      first: 20 + Math.floor(Math.random() * 30),
+      second: 20 + Math.floor(Math.random() * 30),
+    });
+  };
+
+  const cancelParentCheck = () => {
+    if (parentChallenge?.action === 'reset') setConfirmReset(false);
+    parentActionHandled.current = true;
+    setParentAnswer('');
+    setParentError(false);
+    setParentChallenge(null);
+  };
+
+  const submitParentCheck = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!parentChallenge || parentActionHandled.current) return;
+
+    const answer = Number(parentAnswer);
+    if (
+      parentAnswer.trim() === '' ||
+      !Number.isInteger(answer) ||
+      answer !== parentChallenge.first + parentChallenge.second
+    ) {
+      setParentAnswer('');
+      setParentError(true);
+      parentAnswerInput.current?.focus();
+      return;
+    }
+
+    parentActionHandled.current = true;
+    const action = parentChallenge.action;
+    setParentAnswer('');
+    setParentError(false);
+    setParentChallenge(null);
+
+    if (action === 'unlock') {
+      soundFX.playSuccessBirdChirp();
+      onUnlockAllLevels();
+      setUnlockedToast(true);
+      setTimeout(() => setUnlockedToast(false), 2500);
+    } else {
+      onResetProgress();
+      setConfirmReset(false);
+    }
+  };
 
   const setAgeGroup = (ageGroup: AgeGroupId) => {
     soundFX.playWoodTap();
@@ -43,7 +108,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/65 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="w-full max-w-xl rounded-3xl bg-white p-6 sm:p-7 shadow-xl border border-slate-200 my-auto text-right">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-modal-title"
+        className="w-full max-w-xl rounded-3xl bg-white p-6 sm:p-7 shadow-xl border border-slate-200 my-auto text-right"
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -51,7 +121,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Sliders className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-extrabold text-slate-900">
+              <h2 id="settings-modal-title" className="text-xl font-extrabold text-slate-900">
                 تخصيص صعوبة المسائل واللعبة
               </h2>
               <p className="text-xs font-bold text-slate-500">
@@ -292,12 +362,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  soundFX.playSuccessBirdChirp();
-                  onUnlockAllLevels();
-                  setUnlockedToast(true);
-                  setTimeout(() => setUnlockedToast(false), 2500);
-                }}
+                onClick={() => requestParentCheck('unlock')}
+                disabled={Boolean(parentChallenge)}
                 className="flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-xs font-bold cursor-pointer whitespace-nowrap"
               >
                 <Unlock className="w-4 h-4 shrink-0" />
@@ -308,6 +374,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setConfirmReset(true)}
+                  disabled={Boolean(parentChallenge)}
                   className="flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-600 text-xs font-bold cursor-pointer whitespace-nowrap"
                 >
                   <RotateCcw className="w-4 h-4 shrink-0" />
@@ -316,10 +383,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               ) : (
                 <button
                   type="button"
-                  onClick={() => {
-                    onResetProgress();
-                    setConfirmReset(false);
-                  }}
+                  onClick={() => requestParentCheck('reset')}
+                  disabled={Boolean(parentChallenge)}
                   className="flex items-center gap-1.5 px-3.5 py-2 min-h-[44px] rounded-xl bg-rose-600 text-white text-xs font-bold cursor-pointer whitespace-nowrap"
                 >
                   <span>تأكيد مسح التقدم؟</span>
@@ -346,6 +411,66 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
         </div>
       </div>
+      {parentChallenge && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/70 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="parent-check-title"
+            aria-describedby="parent-check-question"
+            onSubmit={submitParentCheck}
+            className="w-full max-w-sm rounded-3xl bg-white p-6 text-right shadow-2xl"
+          >
+            <h2 id="parent-check-title" className="text-lg font-extrabold text-slate-900">
+              تحقق وليّ الأمر
+            </h2>
+            <p id="parent-check-question" className="mt-2 text-sm font-bold text-slate-600">
+              أدخل ناتج الجمع للمتابعة: {parentChallenge.first} + {parentChallenge.second} = ؟
+            </p>
+            <label htmlFor="parent-check-answer" className="mt-4 block text-sm font-bold text-slate-700">
+              الإجابة
+            </label>
+            <input
+              ref={parentAnswerInput}
+              autoFocus
+              id="parent-check-answer"
+              type="number"
+              inputMode="numeric"
+              step="1"
+              value={parentAnswer}
+              onChange={(event) => {
+                setParentAnswer(event.target.value);
+                if (parentError) setParentError(false);
+              }}
+              aria-label="أدخل ناتج الجمع"
+              aria-invalid={parentError}
+              aria-describedby={parentError ? 'parent-check-error' : 'parent-check-question'}
+              className="mt-1 min-h-[48px] w-full rounded-xl border border-slate-300 px-3 text-lg text-slate-900 focus:border-sky-600 focus:outline-none focus:ring-2 focus:ring-sky-200"
+            />
+            {parentError && (
+              <p id="parent-check-error" role="alert" className="mt-2 text-sm font-bold text-rose-700">
+                تعذر التحقق. حاول مرة أخرى.
+              </p>
+            )}
+            <div className="mt-5 flex gap-2">
+              <button
+                type="submit"
+                disabled={parentAnswer.trim() === ''}
+                className="min-h-[44px] flex-1 rounded-xl bg-sky-600 px-4 py-2 text-sm font-extrabold text-white enabled:hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                متابعة
+              </button>
+              <button
+                type="button"
+                onClick={cancelParentCheck}
+                className="min-h-[44px] rounded-xl bg-slate-100 px-4 py-2 text-sm font-extrabold text-slate-700 hover:bg-slate-200"
+              >
+                إلغاء
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

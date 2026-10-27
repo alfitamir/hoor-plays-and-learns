@@ -1,9 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
+import { fileURLToPath } from 'node:url';
 
-const distDir = path.resolve('/app/applet/dist');
-const publicDir = path.resolve('/app/applet/public');
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const distDir = path.join(rootDir, 'dist');
+const publicDir = path.join(rootDir, 'public');
 
 // 1. Read latest CSS and JS from dist/assets
 const assetFiles = fs.readdirSync(path.join(distDir, 'assets'));
@@ -19,7 +21,7 @@ const cssContent = fs.readFileSync(path.join(distDir, 'assets', cssFile), 'utf8'
 let jsContent = fs.readFileSync(path.join(distDir, 'assets', jsFile), 'utf8');
 
 // 2. Read Hoor's photo and convert to base64 data URI
-const photoPath = path.resolve('/app/applet/public/assets/aistudio/10160185010238213_11fa6234.jpg');
+const photoPath = path.join(publicDir, 'assets/aistudio/10160185010238213_11fa6234.jpg');
 let photoBase64 = '';
 if (fs.existsSync(photoPath)) {
   const photoBuf = fs.readFileSync(photoPath);

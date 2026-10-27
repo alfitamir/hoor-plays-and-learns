@@ -73,24 +73,18 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
   const [reciter, setReciter] = useState<ReciterId>('alafasy');
   const [isPlayingAyah, setIsPlayingAyah] = useState(false);
   const [audioError, setAudioError] = useState(false);
+  const [isDeviceReader, setIsDeviceReader] = useState(false);
   const [isAyahCompleted, setIsAyahCompleted] = useState(false);
   const [newWeaponAwarded, setNewWeaponAwarded] = useState<WeaponConfig | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const verse = getVerseBetweenLevels(completedLevelId, nextLevelId);
 
-  // Play celebratory cheer + automatically start Quran recitation upon entering
+  // Play the celebratory cheer, but never start recitation automatically.
   useEffect(() => {
-    // 1. Celebratory cheer sound and voice for Hoor
     soundFX.playCelebrationCheer(`أحسنتِ يا حور يا بطلة! مبروك إتمام المرحلة ${completedLevelId}!`);
 
-    // 2. Auto-play Quran recitation after short delay so cheer finishes
-    const timer = setTimeout(() => {
-      startRecitation(reciter);
-    }, 1400);
-
     return () => {
-      clearTimeout(timer);
       stopCurrentAudio();
     };
   }, [completedLevelId]);
@@ -107,7 +101,7 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
     setIsPlayingAyah(false);
   };
 
-  // Trigger weapon upgrade upon fully finishing Quranic recitation
+  // Only an original recitation audio file may trigger the weapon upgrade.
   const handleAyahFullyListened = () => {
     setIsPlayingAyah(false);
     setIsAyahCompleted(true);
@@ -130,15 +124,24 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
 
   const startRecitation = (reciterChoice: ReciterId) => {
     stopCurrentAudio();
-    setIsPlayingAyah(true);
     setAudioError(false);
+    setIsDeviceReader(false);
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setAudioError(true);
+      fallbackSpeechRecitation();
+      return;
+    }
+
+    setIsPlayingAyah(true);
 
     const urls = getAyahAudioUrl(verse.surahNumber, verse.ayahNumber, reciterChoice);
     let urlIndex = 0;
 
     const playNextUrl = () => {
       if (urlIndex >= urls.length) {
-        // Fallback to offline speech synthesis
+        // Device speech can pronounce the verse, but is not an original recitation.
+        setAudioError(true);
         fallbackSpeechRecitation();
         return;
       }
@@ -147,7 +150,9 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
       audioRef.current = audio;
 
       audio.onended = () => {
-        handleAyahFullyListened();
+        if (audioRef.current === audio) {
+          handleAyahFullyListened();
+        }
       };
 
       audio.onerror = () => {
@@ -161,8 +166,10 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
           setIsPlayingAyah(true);
         })
         .catch(() => {
-          urlIndex++;
-          playNextUrl();
+          // A browser autoplay/playback policy rejection should be reported, not hidden.
+          setIsPlayingAyah(false);
+          setAudioError(true);
+          audioRef.current = null;
         });
     };
 
@@ -172,13 +179,15 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
   const fallbackSpeechRecitation = () => {
     const cleanText = verse.verseText.replace(/[﴿﴾]/g, '').trim();
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      setIsDeviceReader(true);
+      setIsPlayingAyah(true);
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.lang = 'ar-SA';
       utterance.rate = 0.85;
       utterance.pitch = 1.05;
       utterance.onend = () => {
-        handleAyahFullyListened();
+        setIsPlayingAyah(false);
       };
       utterance.onerror = () => {
         setIsPlayingAyah(false);
@@ -270,12 +279,12 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
           </div>
         </div>
 
-        {/* 1. Inspiring Quranic Ayah Card with Famous Reciter Voice & Auto-Play */}
+        {/* 1. Quranic Ayah Card with user-initiated recitation playback */}
         <div className="rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border-2 border-emerald-300 p-4 space-y-3 relative overflow-hidden shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-black text-emerald-900">
             <span className="flex items-center gap-1.5 bg-white/95 px-3 py-1 rounded-lg border border-emerald-300 shadow-2xs">
               <BookOpen className="w-4 h-4 text-emerald-700 shrink-0" />
-              <span>تلاوة قرآنية مباركة (تشتغل تلقائياً)</span>
+              <span>آية كريمة — اضغطي للاستماع</span>
             </span>
             <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/70 px-2.5 py-0.5 rounded-lg border border-emerald-200">
               {verse.surahName} · الآية {verse.ayahNumber}
@@ -288,6 +297,10 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
               {verse.verseText}
             </p>
           </div>
+
+          <p className="rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 text-xs font-bold leading-relaxed text-sky-950">
+            نص الآية ظاهر ومتاح دون اتصال. التلاوة الصوتية الأصلية تحتاج اتصالاً بالإنترنت؛ ويمكن لقارئ الجهاز نطق النص كبديل، لكنه ليس تلاوة قرآنية.
+          </p>
 
           {/* Reciter Selector & Audio Playback Wave */}
           <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -351,7 +364,7 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
                 ) : (
                   <>
                     <Volume2 className="w-4 h-4" />
-                    <span>تشغيل بصوت {RECITERS[reciter].nameAr.split(' ')[1]}</span>
+                    <span>{isDeviceReader ? 'إيقاف نطق الجهاز' : `تشغيل بصوت ${RECITERS[reciter].nameAr.split(' ')[1]}`}</span>
                   </>
                 )}
               </button>
@@ -361,8 +374,23 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
           <div className="text-xs text-slate-700 font-bold leading-relaxed px-1">
             🌟 {verse.reflectionAr}
           </div>
+          <p className="px-1 text-[11px] font-bold leading-relaxed text-slate-600">
+            التلاوة الأصلية تحتاج اتصالاً عند أول تشغيل. في تطبيق الويب، قد تُحفظ المقاطع التي شُغّلت لتعمل لاحقاً دون اتصال؛ لا يشمل ذلك نسخة APK.
+          </p>
 
-          {/* Weapon Upgrade Reward Banner based on listening to the Ayah */}
+          {audioError && (
+            <div role="status" className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold leading-relaxed text-rose-900">
+              تعذّر تشغيل الصوت الأصلي. تحققي من اتصال الإنترنت ثم اضغطي زر التشغيل مجدداً. نص الآية متاح دون اتصال، وقد يتوفر نطق الجهاز كبديل وليس كتلاوة.
+            </div>
+          )}
+
+          {isDeviceReader && isPlayingAyah && (
+            <div role="status" className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs font-bold text-amber-950">
+              قارئ الجهاز ينطق نص الآية فقط؛ هذا ليس تلاوة أصلية ولا يمنح ترقية السلاح.
+            </div>
+          )}
+
+          {/* Weapon Upgrade Reward Banner shown after original recitation audio completes */}
           {newWeaponAwarded ? (
             <div className="rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 p-3.5 text-slate-950 font-black shadow-md border-2 border-amber-600 animate-in zoom-in-95 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -391,8 +419,10 @@ export const BetweenLevelsModal: React.FC<BetweenLevelsModalProps> = ({
                 <span className="text-lg">🎧</span>
                 <span>
                   {isPlayingAyah
-                    ? 'جاري الاستماع للآية... عند انتهائها ستحصلين على سلاح أقوى للمرحلة القادمة!'
-                    : 'استمعي للآية الكريمة كاملة للحصول على ترقية سلاح خارق للمرحلة القادمة!'}
+                    ? isDeviceReader
+                      ? 'نطق الجهاز للنص جارٍ؛ الترقية تُمنح فقط بعد اكتمال ملف التلاوة الأصلي.'
+                      : 'تُمنح الترقية بعد اكتمال ملف التلاوة الصوتي الأصلي.'
+                    : 'شغّلي ملف التلاوة الأصلي كاملاً للحصول على ترقية السلاح للمرحلة القادمة.'}
                 </span>
               </div>
               {!isPlayingAyah && (

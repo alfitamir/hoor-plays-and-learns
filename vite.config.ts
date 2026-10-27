@@ -1,11 +1,19 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
+const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+
 export default defineConfig(() => {
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(packageJson.version),
+    },
     plugins: [
       {
         name: 'serve-apk-headers',
@@ -105,6 +113,21 @@ export default defineConfig(() => {
                 },
               },
             },
+            {
+              // Cache ayah audio after it has been played online for later offline listening.
+              urlPattern: /^https:\/\/(?:everyayah\.com|verses\.quran\.com|cdn\.islamic\.network)\/.*\.mp3(?:\?.*)?$/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'quran-ayah-audio-cache',
+                expiration: {
+                  maxEntries: 80,
+                  maxAgeSeconds: 60 * 60 * 24 * 180,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
           ],
         },
         devOptions: {
@@ -115,7 +138,7 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': projectRoot,
       },
     },
     server: {
